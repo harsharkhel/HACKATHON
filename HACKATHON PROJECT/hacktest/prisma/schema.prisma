@@ -1,0 +1,284 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  PARTICIPANT
+  JUDGE
+  ORGANIZER
+}
+
+enum HackathonStatus {
+  DRAFT
+  ACTIVE
+  JUDGING
+  COMPLETED
+  ARCHIVED
+}
+
+enum ProjectStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  TESTED
+  EVALUATED
+}
+
+enum TestType {
+  COMPATIBILITY
+  PERFORMANCE
+  LOAD
+}
+
+enum TestStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum LoadTestStatus {
+  PASSED
+  DEGRADED
+  FAILED
+}
+
+enum NotificationType {
+  TEST_COMPLETED
+  EVALUATION_RECEIVED
+  PROJECT_SUBMITTED
+  HACKATHON_UPDATE
+}
+
+model User {
+  id                    String               @id @default(uuid())
+  name                  String
+  email                 String               @unique
+  passwordHash          String
+  role                  Role                 @default(PARTICIPANT)
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  organizedHackathons   Hackathon[]          @relation("HackathonOrganizer")
+  hackathonParticipants HackathonParticipant[]
+  hackathonJudges       HackathonJudge[]
+  submittedProjects     Project[]            @relation("ProjectParticipant")
+  evaluations           Evaluation[]
+  notifications         Notification[]
+  auditLogs             AuditLog[]
+}
+
+model Hackathon {
+  id                   String               @id @default(uuid())
+  name                 String
+  description          String?
+  startDate            DateTime?
+  endDate              DateTime?
+  submissionDeadline   DateTime?
+  status               HackathonStatus      @default(DRAFT)
+  organizerId          String
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+
+  organizer            User                 @relation("HackathonOrganizer", fields: [organizerId], references: [id], onDelete: Cascade)
+  participants         HackathonParticipant[]
+  judges               HackathonJudge[]
+  projects             Project[]
+
+  @@index([organizerId])
+}
+
+model HackathonParticipant {
+  id          String   @id @default(uuid())
+  userId      String
+  hackathonId String
+  joinedAt    DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  hackathon   Hackathon @relation(fields: [hackathonId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, hackathonId])
+  @@index([hackathonId])
+}
+
+model HackathonJudge {
+  id          String   @id @default(uuid())
+  userId      String
+  hackathonId String
+  assignedAt  DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  hackathon   Hackathon @relation(fields: [hackathonId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, hackathonId])
+  @@index([hackathonId])
+}
+
+model Project {
+  id              String          @id @default(uuid())
+  hackathonId     String
+  participantId   String
+  name            String
+  description     String
+  githubUrl       String?
+  deploymentUrl   String?
+  status          ProjectStatus   @default(DRAFT)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  hackathon       Hackathon       @relation(fields: [hackathonId], references: [id], onDelete: Cascade)
+  participant     User            @relation("ProjectParticipant", fields: [participantId], references: [id], onDelete: Cascade)
+  testingSessions TestingSession[]
+  testJobs        TestJob[]
+  evaluations     Evaluation[]
+
+  @@unique([hackathonId, participantId])
+  @@index([hackathonId])
+  @@index([participantId])
+}
+
+model TestingSession {
+  id          String    @id @default(uuid())
+  projectId   String
+  tokenHash   String    @unique
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  testJobs    TestJob[]
+
+  @@index([projectId])
+  @@index([tokenHash])
+}
+
+model TestJob {
+  id          String    @id @default(uuid())
+  projectId   String
+  sessionId   String?
+  type        TestType
+  status      TestStatus @default(QUEUED)
+  startedAt   DateTime?
+  completedAt DateTime?
+  errorMessage String?
+  createdAt   DateTime  @default(now())
+
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  session     TestingSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+
+  compatibilityResult CompatibilityResult?
+  performanceResult   PerformanceResult?
+  loadTestResult      LoadTestResult?
+
+  @@index([projectId])
+  @@index([status])
+}
+
+model CompatibilityResult {
+  id                  String    @id @default(uuid())
+  testJobId           String    @unique
+  httpStatus          Int?
+  pageLoadTime        Float?
+  consoleErrors       Int?
+  failedRequests      Int?
+  brokenLinks         Int?
+  horizontalOverflow  Boolean?
+  responsive          Boolean?
+  viewportResults     Json?
+  screenshots         Json?
+  issues              Json?
+  createdAt           DateTime  @default(now())
+
+  testJob             TestJob   @relation(fields: [testJobId], references: [id], onDelete: Cascade)
+}
+
+model PerformanceResult {
+  id                 String    @id @default(uuid())
+  testJobId          String    @unique
+  avgResponseTime    Float?
+  p95Latency         Float?
+  p99Latency         Float?
+  requestsPerSecond  Float?
+  errorRate          Float?
+  throughput         Float?
+  availability       Float?
+  createdAt          DateTime  @default(now())
+
+  testJob            TestJob   @relation(fields: [testJobId], references: [id], onDelete: Cascade)
+}
+
+model LoadTestResult {
+  id                 String    @id @default(uuid())
+  testJobId          String    @unique
+  virtualUsers       Int?
+  duration           Int?
+  requestsPerSecond  Float?
+  avgLatency         Float?
+  p95Latency         Float?
+  p99Latency         Float?
+  errorRate          Float?
+  httpFailures       Int?
+  status             LoadTestStatus?
+  createdAt          DateTime  @default(now())
+
+  testJob            TestJob   @relation(fields: [testJobId], references: [id], onDelete: Cascade)
+}
+
+model Evaluation {
+  id                  String   @id @default(uuid())
+  projectId           String
+  judgeId             String
+  innovationScore     Int?
+  technicalScore      Int?
+  uiuxScore           Int?
+  functionalityScore  Int?
+  performanceScore    Int?
+  scalabilityScore    Int?
+  problemSolvingScore Int?
+  presentationScore   Int?
+  comments            String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  project             Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  judge               User     @relation(fields: [judgeId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, judgeId])
+  @@index([projectId])
+}
+
+model Notification {
+  id        String          @id @default(uuid())
+  userId    String
+  type      NotificationType
+  title     String
+  message   String
+  read      Boolean         @default(false)
+  createdAt DateTime        @default(now())
+
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  userId      String?
+  action      String
+  entityType  String
+  entityId    String?
+  metadata    Json?
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([entityType, entityId])
+}

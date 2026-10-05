@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    /* Language & Output */
+    "target": "ES2022",
+    "module": "commonjs",
+    "lib": ["ES2022"],
+    "outDir": "./dist",
+    "rootDir": "./src",
+
+    /* Type Safety — all strict checks enabled */
+    "strict": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "ignoreDeprecations": "6.0",
+
+    /* Module Resolution */
+    "moduleResolution": "node",
+    "resolveJsonModule": true,
+
+    /* Source Maps for debugging */
+    "sourceMap": true,
+    "declaration": true,
+
+    /* Path aliases — lets us import like @/config/env instead of ../../config/env */
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.d.ts"],
+  "exclude": ["node_modules", "dist", "tests", "prisma/seed.ts"]
+}
