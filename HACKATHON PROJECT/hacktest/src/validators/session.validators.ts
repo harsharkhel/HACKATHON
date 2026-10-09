@@ -15,6 +15,10 @@ export const qrTokenRequestSchema = z.object({
   params: z.object({ token: z.string().regex(/^[a-f0-9]{64}$/i) }),
 });
 
+export const previewTokenRequestSchema = z.object({
+  params: z.object({ sessionToken: z.string().regex(/^[a-f0-9]{64}$/i) }),
+});
+
 export const connectSessionRequestSchema = z.object({
   body: z.object({
     token: z.string().regex(/^[a-f0-9]{64}$/i),

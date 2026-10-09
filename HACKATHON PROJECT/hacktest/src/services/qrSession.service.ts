@@ -77,6 +77,30 @@ export const getQrProjectPreview = async (token: string) => {
     expiresAt: session.expiresAt,
     project: session.project,
   };
+
+  export const getProjectPreviewByToken = async (token: string) => {
+    const session = await findValidQrSession(token);
+    const latestHealthCheck = await prisma.healthCheck.findFirst({
+      where: { projectId: session.projectId },
+      orderBy: [{ checkedAt: 'desc' }, { id: 'desc' }],
+      select: { isHealthy: true, responseTime: true },
+    });
+
+    return {
+      project: {
+        name: session.project.name,
+        description: session.project.description,
+        projectUrl: session.project.projectUrl,
+      },
+      health: {
+        status: latestHealthCheck ? (latestHealthCheck.isHealthy ? 'healthy' : 'unhealthy') : 'unknown',
+        responseTime: latestHealthCheck?.responseTime ?? null,
+      },
+      session: {
+        expiresAt: session.expiresAt,
+      },
+    };
+  };
 };
 
 export const revokeProjectQrSession = async (

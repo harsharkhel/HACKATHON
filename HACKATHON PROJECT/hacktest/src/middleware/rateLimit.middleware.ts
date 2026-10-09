@@ -80,3 +80,25 @@ export const qrSessionLimiter = rateLimit({
     error: { code: 'TOO_MANY_REQUESTS', message: 'Too many QR session requests; try again later' },
   },
 });
+
+export const previewLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    error: { code: 'TOO_MANY_REQUESTS', message: 'Too many preview requests; try again later' },
+  },
+});
+
+export const loadTestLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 3,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    error: { code: 'TOO_MANY_REQUESTS', message: 'Load-test creation limit reached for this hour' },
+  },
+});

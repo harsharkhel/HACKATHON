@@ -12,6 +12,10 @@ describe('sanitizeRequestPath', () => {
       '/api/v1/qr/[REDACTED]/connect',
     );
     assert.equal(
+      sanitizeRequestPath(`/api/v1/preview/${token}`),
+      '/api/v1/preview/[REDACTED]',
+    );
+    assert.equal(
       sanitizeRequestPath(`/api/v1/sessions/${sessionId}/heartbeat`),
       '/api/v1/sessions/[REDACTED]/heartbeat',
     );
