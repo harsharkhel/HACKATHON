@@ -39,7 +39,7 @@ export class AppError extends Error {
     this.isOperational = true;
 
     // Maintains proper stack trace in V8 (the JS engine)
-    Object.setPrototypeOf(this, AppError.prototype);
+    Object.setPrototypeOf(this, new.target.prototype);
     Error.captureStackTrace(this, this.constructor);
   }
 }

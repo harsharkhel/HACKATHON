@@ -80,7 +80,11 @@ worker.on('failed', async (job, error) => {
           : 'The load-test worker failed after retrying. Please retry the test.',
       },
     });
-    if (record && ![LoadTestStatus.COMPLETED, LoadTestStatus.CANCELLED].includes(record.status)) {
+    if (
+      record &&
+      record.status !== LoadTestStatus.COMPLETED &&
+      record.status !== LoadTestStatus.CANCELLED
+    ) {
       await setTemporaryState(
         `${LOAD_TEST_PROGRESS_KEY_PREFIX}${job.data.loadTestId}`,
         JSON.stringify({

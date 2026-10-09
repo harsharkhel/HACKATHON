@@ -19,7 +19,7 @@ const getJudgeProject = async (projectId: string) => {
 };
 
 export const getJudgeProjectOverview = async (projectId: string) => {
-  const [project, health, loadTests] = await Promise.all([
+  const [project, health, loadTests, deviceCompatibility] = await Promise.all([
     getJudgeProject(projectId),
     prisma.healthCheck.findFirst({
       where: { projectId },
@@ -48,6 +48,7 @@ export const getJudgeProjectOverview = async (projectId: string) => {
         completedAt: true,
       },
     }),
+    listDeviceCompatibilityForAuthorizedSession(projectId),
   ]);
 
   return {
@@ -59,6 +60,7 @@ export const getJudgeProjectOverview = async (projectId: string) => {
       checkedAt: health?.checkedAt ?? null,
     },
     loadTest: loadTests[0] ?? null,
+    deviceCompatibility,
   };
 };
 
