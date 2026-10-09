@@ -29,7 +29,7 @@ The initial schema migration is checked in at `prisma/migrations/20261008193100_
 
 Seed a local database with one demo user and project using `npm run db:seed` (or `npx prisma db seed`). The seed account has no usable password hash and is not an authentication account.
 
-Project URLs must use HTTPS by default. Set `ALLOW_HTTP_TARGETS=true` only when accepting plain HTTP targets is intentional. Submitted URLs are normalized, DNS-resolved, and rejected if any resolved address is not public. `resolveRedirectTarget` provides checked URL resolution for redirects; any outbound client must disable automatic redirect following, use the resolved addresses when connecting, and validate each redirect before following it. This foundation does not yet make outbound requests or implement health-check/load-test endpoints.
+Project URLs must use HTTPS by default. Set `ALLOW_HTTP_TARGETS=true` only when accepting plain HTTP targets is intentional. Submitted URLs are normalized, DNS-resolved, and rejected if any resolved address is not public.
 
 ## Project API
 
@@ -40,6 +40,26 @@ All project endpoints require a valid bearer token. Creation, updates, and delet
 - `GET /api/v1/projects/:id`
 - `PATCH /api/v1/projects/:id`
 - `DELETE /api/v1/projects/:id`
+- `POST /api/v1/projects/:id/health-check`
+- `GET /api/v1/projects/:id/health-checks`
+- `POST /api/v1/projects/:id/qr?format=png|svg`
+- `DELETE /api/v1/projects/:id/qr/:qrSessionId` (revoke a QR token)
+
+Health checks re-resolve and pin public addresses at connect time, validate every redirect, limit the redirect chain to five hops, use a seven-second total deadline, perform at most one retry, and cap concurrent checks. Every result (including network failures) is persisted in PostgreSQL; history returns the latest 50 checks.
+
+QR tokens contain 256 bits of random entropy, are stored as SHA-256 hashes, and expire after 30 minutes. QR payloads contain only a public `/p/{token}` URL. The public preview routes are:
+
+- `GET /api/v1/qr/:token`
+- `POST /api/v1/qr/:token/connect`
+
+Device-session routes are:
+
+- `POST /api/v1/sessions/connect` with `{ "token": "<qr-token>" }`
+- `GET /api/v1/sessions/:id`
+- `POST /api/v1/sessions/:id/heartbeat`
+- `DELETE /api/v1/sessions/:id`
+
+Device sessions expire after 30 minutes without a heartbeat. Redis tracks active sessions with TTLs, while PostgreSQL stores session/device analytics. Protected routes can use `requireActiveProjectSession` and the `X-Project-Session-Id` header.
 
 Run the API authorization and URL security tests with `npm test`.
 
