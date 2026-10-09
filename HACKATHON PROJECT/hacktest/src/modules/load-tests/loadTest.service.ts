@@ -182,10 +182,16 @@ export const cancelLoadTest = async (loadTestId: string, userId: string, role: U
   }
 
   const requestedAt = new Date();
-  await prisma.loadTest.updateMany({
+  const running = await prisma.loadTest.updateMany({
     where: { id: record.id, status: LoadTestStatus.RUNNING },
     data: { cancelRequestedAt: requestedAt },
   });
+  if (running.count === 0) {
+    const latest = await prisma.loadTest.findUnique({ where: { id: record.id } });
+    if (!latest || [LoadTestStatus.COMPLETED, LoadTestStatus.FAILED, LoadTestStatus.CANCELLED].includes(latest.status)) {
+      throw new BadRequestError('This load test has already finished', 'LOAD_TEST_NOT_ACTIVE');
+    }
+  }
   await setTemporaryState(`${LOAD_TEST_CANCEL_KEY_PREFIX}${record.id}`, '1', CANCELLATION_TTL_SECONDS);
   log.info({ loadTestId }, 'Load-test cancellation requested');
   return getLoadTest(loadTestId, userId, role);

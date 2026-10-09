@@ -7,12 +7,15 @@ import { validate } from '../middleware/validation.middleware';
 import { healthCheckLimiter, qrSessionLimiter } from '../middleware/rateLimit.middleware';
 import { createProjectHealthCheck, getProjectHealthChecks } from '../controllers/healthCheck.controller';
 import { createQr, revokeQr } from '../controllers/qrSession.controller';
+import { createLoadTestHandler, listLoadTestsHandler } from '../controllers/loadTest.controller';
+import { loadTestLimiter } from '../middleware/rateLimit.middleware';
 import {
   createProjectRequestSchema,
   projectIdRequestSchema,
   updateProjectRequestSchema,
 } from '../validators/project.validators';
 import { qrSessionIdRequestSchema, createQrRequestSchema } from '../validators/session.validators';
+import { createLoadTestRequestSchema } from '../modules/load-tests/loadTest.schema';
 
 const router = Router();
 
@@ -79,6 +82,20 @@ router.delete(
   validate(qrSessionIdRequestSchema),
   requireProjectOwner,
   revokeQr,
+);
+router.post(
+  '/:id/load-tests',
+  requireAuth,
+  loadTestLimiter,
+  validate(projectIdRequestSchema),
+  validate(createLoadTestRequestSchema),
+  createLoadTestHandler,
+);
+router.get(
+  '/:id/load-tests',
+  requireAuth,
+  validate(projectIdRequestSchema),
+  listLoadTestsHandler,
 );
 
 export default router;

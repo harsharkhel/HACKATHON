@@ -4,6 +4,7 @@ import { env } from './config/env';
 import { createModuleLogger } from './utils/logger';
 import { connectDatabase, disconnectDatabase } from './services/database.service';
 import { disconnectRedis } from './config/redis';
+import { disconnectLoadTestQueue } from './config/loadTestQueue';
 
 const log = createModuleLogger('server');
 const server = http.createServer(app);
@@ -23,7 +24,7 @@ const shutdown = (signal: NodeJS.Signals): void => {
       process.exitCode = 1;
     }
 
-    void Promise.all([disconnectDatabase(), disconnectRedis()]).catch((disconnectError: unknown) => {
+    void Promise.all([disconnectDatabase(), disconnectRedis(), disconnectLoadTestQueue()]).catch((disconnectError: unknown) => {
       log.error({ err: disconnectError }, 'Failed to close database or Redis connections');
       process.exitCode = 1;
     });
