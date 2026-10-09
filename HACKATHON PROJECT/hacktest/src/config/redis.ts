@@ -27,6 +27,15 @@ export const setTemporaryState = async (key: string, value: string, ttlSeconds: 
   await redis.set(key, value, { EX: ttlSeconds });
 };
 
+export const setTemporaryStateIfAbsent = async (
+  key: string,
+  value: string,
+  ttlSeconds: number,
+): Promise<boolean> => {
+  const redis = await getClient();
+  return (await redis.set(key, value, { EX: ttlSeconds, NX: true })) === 'OK';
+};
+
 export const getTemporaryState = async (key: string): Promise<string | null> => {
   const redis = await getClient();
   return redis.get(key);

@@ -131,13 +131,14 @@ model LoadTest {
   durationMs               Int?
   errorMessage             String?
   cancelRequestedAt        DateTime?      @db.Timestamptz(3)
+  createdAt                DateTime       @default(now()) @db.Timestamptz(3)
   startedAt                DateTime?      @db.Timestamptz(3)
   completedAt              DateTime?      @db.Timestamptz(3)
   status                   LoadTestStatus @default(QUEUED)
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
-  @@index([projectId, startedAt])
+  @@index([projectId, createdAt])
   @@index([status, startedAt])
 }
 
