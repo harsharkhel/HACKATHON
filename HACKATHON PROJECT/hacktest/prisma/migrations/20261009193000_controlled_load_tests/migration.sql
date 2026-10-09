@@ -16,3 +16,7 @@ ALTER TABLE "LoadTest"
 
 DROP INDEX "LoadTest_projectId_startedAt_idx";
 CREATE INDEX "LoadTest_projectId_createdAt_idx" ON "LoadTest"("projectId", "createdAt");
+
+CREATE UNIQUE INDEX "LoadTest_one_active_per_project_idx"
+  ON "LoadTest"("projectId")
+  WHERE "status" IN ('QUEUED', 'RUNNING');

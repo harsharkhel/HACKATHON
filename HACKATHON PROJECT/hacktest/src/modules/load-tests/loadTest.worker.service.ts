@@ -14,6 +14,11 @@ const log = createModuleLogger('load-test-worker');
 const REQUEST_TIMEOUT_MS = 5_000;
 const DNS_TIMEOUT_MS = 2_000;
 
+const isTerminalStatus = (status: LoadTestStatus): boolean =>
+  status === LoadTestStatus.COMPLETED ||
+  status === LoadTestStatus.FAILED ||
+  status === LoadTestStatus.CANCELLED;
+
 interface ResolvedAddress {
   address: string;
   family: 4 | 6;
@@ -157,7 +162,7 @@ const persistFailure = async (loadTestId: string, message: string): Promise<void
 export const runLoadTest = async (loadTestId: string): Promise<void> => {
   const loadTest = await prisma.loadTest.findUnique({ where: { id: loadTestId } });
   if (!loadTest) throw new Error('load_test_not_found');
-  if ([LoadTestStatus.COMPLETED, LoadTestStatus.FAILED, LoadTestStatus.CANCELLED].includes(loadTest.status)) {
+  if (isTerminalStatus(loadTest.status)) {
     log.info({ loadTestId, status: loadTest.status }, 'Skipping terminal load-test job');
     return;
   }
@@ -171,10 +176,29 @@ export const runLoadTest = async (loadTestId: string): Promise<void> => {
   }
 
   const startedAt = new Date();
-  await prisma.loadTest.update({
-    where: { id: loadTestId },
+  const claimed = await prisma.loadTest.updateMany({
+    where: {
+      id: loadTestId,
+      status: { in: [LoadTestStatus.QUEUED, LoadTestStatus.RUNNING] },
+      cancelRequestedAt: null,
+    },
     data: { status: LoadTestStatus.RUNNING, startedAt, completedAt: null, errorMessage: null },
   });
+  if (claimed.count !== 1) {
+    const current = await prisma.loadTest.findUnique({
+      where: { id: loadTestId },
+      select: { status: true, cancelRequestedAt: true },
+    });
+    if (current?.cancelRequestedAt || current?.status === LoadTestStatus.CANCELLED) {
+      await prisma.loadTest.updateMany({
+        where: { id: loadTestId, status: { in: [LoadTestStatus.QUEUED, LoadTestStatus.RUNNING] } },
+        data: { status: LoadTestStatus.CANCELLED, completedAt: new Date() },
+      });
+      return;
+    }
+    if (current && isTerminalStatus(current.status)) return;
+    throw new Error('load_test_claim_failed');
+  }
   log.info({
     loadTestId,
     concurrency: loadTest.concurrentUsers,

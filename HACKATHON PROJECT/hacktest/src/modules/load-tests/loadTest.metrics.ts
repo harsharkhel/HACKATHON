@@ -25,6 +25,14 @@ const percentile = (sorted: number[], fraction: number): number | null => {
   return sorted[Math.max(0, rank - 1)];
 };
 
+const median = (sorted: number[]): number | null => {
+  if (sorted.length === 0) return null;
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0
+    ? (sorted[middle - 1] + sorted[middle]) / 2
+    : sorted[middle];
+};
+
 export const calculateLoadTestMetrics = (
   observations: LoadTestObservation[],
   durationMs: number,
@@ -61,7 +69,7 @@ export const calculateLoadTestMetrics = (
     averageResponseTime: latencies.length
       ? latencies.reduce((sum, latency) => sum + latency, 0) / latencies.length
       : null,
-    medianResponseTime: percentile(latencies, 0.5),
+    medianResponseTime: median(latencies),
     p95ResponseTime: percentile(latencies, 0.95),
     p99ResponseTime: percentile(latencies, 0.99),
     requestsPerSecond: totalRequests / (safeDurationMs / 1_000),

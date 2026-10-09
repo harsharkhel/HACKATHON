@@ -14,6 +14,11 @@ const log = createModuleLogger('load-tests');
 const MAX_QUEUED_JOBS = 100;
 const CANCELLATION_TTL_SECONDS = 120;
 
+const isTerminalStatus = (status: LoadTestStatus): boolean =>
+  status === LoadTestStatus.COMPLETED ||
+  status === LoadTestStatus.FAILED ||
+  status === LoadTestStatus.CANCELLED;
+
 type LoadTestAccess = {
   id: string;
   userId: string;
@@ -91,16 +96,29 @@ export const createProjectLoadTest = async (
     throw new ConflictError('The load-test queue is full; try again later', 'LOAD_TEST_QUEUE_FULL');
   }
 
-  const record = await prisma.loadTest.create({
-    data: {
-      projectId: project.id,
-      targetUrl: project.projectUrl,
-      concurrentUsers: input.concurrency,
-      durationSeconds: input.durationSeconds,
-      maxRequests: input.maxRequests,
-      status: LoadTestStatus.QUEUED,
-    },
-  });
+  let record: LoadTest;
+  try {
+    record = await prisma.loadTest.create({
+      data: {
+        projectId: project.id,
+        targetUrl: project.projectUrl,
+        concurrentUsers: input.concurrency,
+        durationSeconds: input.durationSeconds,
+        maxRequests: input.maxRequests,
+        status: LoadTestStatus.QUEUED,
+      },
+    });
+  } catch (error) {
+    if (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      error.code === 'P2002'
+    ) {
+      throw new ConflictError('A load test is already queued or running for this project', 'LOAD_TEST_ALREADY_ACTIVE');
+    }
+    throw error;
+  }
 
   try {
     await queue.add('run-load-test', { loadTestId: record.id }, { jobId: record.id });
@@ -155,7 +173,7 @@ export const cancelLoadTest = async (loadTestId: string, userId: string, role: U
   });
   if (!record) throw new NotFoundError('Load test not found', 'LOAD_TEST_NOT_FOUND');
   await ensureLoadTestAccess(record, userId, role);
-  if ([LoadTestStatus.COMPLETED, LoadTestStatus.FAILED, LoadTestStatus.CANCELLED].includes(record.status)) {
+  if (isTerminalStatus(record.status)) {
     throw new BadRequestError('This load test has already finished', 'LOAD_TEST_NOT_ACTIVE');
   }
 
@@ -191,7 +209,7 @@ export const cancelLoadTest = async (loadTestId: string, userId: string, role: U
   });
   if (running.count === 0) {
     const latest = await prisma.loadTest.findUnique({ where: { id: record.id } });
-    if (!latest || [LoadTestStatus.COMPLETED, LoadTestStatus.FAILED, LoadTestStatus.CANCELLED].includes(latest.status)) {
+    if (!latest || isTerminalStatus(latest.status)) {
       throw new BadRequestError('This load test has already finished', 'LOAD_TEST_NOT_ACTIVE');
     }
   }

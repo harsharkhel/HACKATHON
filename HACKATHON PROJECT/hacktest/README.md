@@ -1,6 +1,6 @@
 # HackPreview backend
 
-The HackPreview backend foundation uses Node.js, TypeScript, Express, PostgreSQL/Prisma, Redis, and Zod. It currently provides configuration, middleware, API versioning, a health endpoint, and a Prisma data model. Authentication and project/judge workflows are not implemented.
+The HackPreview backend uses Node.js, TypeScript, Express, PostgreSQL/Prisma, Redis/BullMQ, and Zod to provide authentication, project management, previews, health checks, QR/device sessions, and controlled load tests.
 
 ## Requirements
 
@@ -44,6 +44,10 @@ All project endpoints require a valid bearer token. Creation, updates, and delet
 - `GET /api/v1/projects/:id/health-checks`
 - `POST /api/v1/projects/:id/qr?format=png|svg`
 - `DELETE /api/v1/projects/:id/qr/:qrSessionId` (revoke a QR token)
+- `POST /api/v1/projects/:id/load-tests`
+- `GET /api/v1/projects/:id/load-tests`
+- `GET /api/v1/load-tests/:id`
+- `POST /api/v1/load-tests/:id/cancel`
 
 Health checks re-resolve and pin public addresses at connect time, validate every redirect, limit the redirect chain to five hops, use a seven-second total deadline, perform at most one retry, and cap concurrent checks. Every result (including network failures) is persisted in PostgreSQL; history returns the latest 50 checks.
 
@@ -60,6 +64,21 @@ Device-session routes are:
 - `DELETE /api/v1/sessions/:id`
 
 Device sessions expire after 30 minutes without a heartbeat. Redis tracks active sessions with TTLs, while PostgreSQL stores session/device analytics. Protected routes can use `requireActiveProjectSession` and the `X-Project-Session-Id` header.
+
+The phone preview endpoint is `GET /api/v1/preview/:sessionToken`. The QR token authorizes only the project's name, description, public URL, latest health status/latency, and token expiry. The API returns metadata only: clients navigate to the project URL directly; HackPreview does not proxy project traffic. CORS is restricted to `CORS_ORIGINS`, and preview responses are private, non-cacheable, and non-indexable.
+
+Load-test creation accepts optional `concurrency` (default 100, maximum 500), `durationSeconds` (default 30, maximum 60), and `maxRequests` (default 10,000, maximum 10,000). Only one active test is allowed per project; the queue has a 100-job backlog limit and creation is rate-limited. Target requests run only in the separate Redis/BullMQ worker, which revalidates and pins public DNS addresses, times out each request after five seconds, and never buffers response bodies.
+
+Start the worker separately from the API:
+
+```sh
+npm run build
+npm run worker
+```
+
+For development, run `npm run worker:dev` in another terminal. BullMQ retries failed jobs once, recovers stalled jobs, and worker shutdown requests cancellation of its active test. Results include total/successful/failed requests, average/median/p95/p99 latency, RPS, error rate, status and error distributions, and duration.
+
+The Compose stack starts `api` and `load-test-worker` as separate services. The worker is constrained to one CPU and 512 MiB in the supplied Compose configuration.
 
 Run the API authorization and URL security tests with `npm test`.
 
@@ -121,7 +140,8 @@ src/
   types/         Shared TypeScript declarations
   utils/         Shared utilities and logging
   validators/    Reserved for request schemas
-  jobs/          Reserved for background jobs
+  modules/load-tests/  Load-test API, metrics, and worker execution
+  workers/       Standalone BullMQ workers
   app.ts         Express configuration
   server.ts      HTTP server bootstrap and shutdown handling
 ```

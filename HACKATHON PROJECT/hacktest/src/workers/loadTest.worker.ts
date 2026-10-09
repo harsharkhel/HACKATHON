@@ -3,7 +3,7 @@ import IORedis from 'ioredis';
 import { LoadTestStatus } from '@prisma/client';
 import { env } from '../config/env';
 import { prisma } from '../config/database';
-import { deleteTemporaryState, setTemporaryState } from '../config/redis';
+import { disconnectRedis } from '../config/redis';
 import {
   disconnectLoadTestQueue,
   LOAD_TEST_CANCEL_KEY_PREFIX,
@@ -85,13 +85,24 @@ worker.on('error', (error) => {
 const shutdown = (signal: NodeJS.Signals): void => {
   log.info({ signal }, 'Gracefully stopping load-test worker');
   shuttingDown ??= (async () => {
-    await Promise.all(
-      [...activeJobs].map((loadTestId) =>
-        setTemporaryState(`${LOAD_TEST_CANCEL_KEY_PREFIX}${loadTestId}`, '1', 120)),
-    );
+    await Promise.all([...activeJobs].map(async (loadTestId) => {
+      try {
+        await prisma.loadTest.updateMany({
+          where: { id: loadTestId, status: LoadTestStatus.RUNNING },
+          data: { cancelRequestedAt: new Date() },
+        });
+        await connection.set(`${LOAD_TEST_CANCEL_KEY_PREFIX}${loadTestId}`, '1', 'EX', 120);
+      } catch (error) {
+        log.error({ err: error, loadTestId }, 'Unable to request active load-test cancellation');
+      }
+    }));
     await worker.close();
     if (connection.status !== 'end') await connection.quit();
-    await Promise.all([disconnectDatabase(), disconnectLoadTestQueue()]);
+    await Promise.all([
+      disconnectDatabase(),
+      disconnectRedis(),
+      disconnectLoadTestQueue(),
+    ]);
     log.info('Load-test worker stopped');
   })().catch((error: unknown) => {
     log.fatal({ err: error }, 'Load-test worker shutdown failed');
@@ -106,6 +117,7 @@ void worker.waitUntilReady().then(() => {
   log.info({ queue: LOAD_TEST_QUEUE_NAME }, 'Load-test worker ready');
 }).catch((error: unknown) => {
   log.fatal({ err: error }, 'Unable to start load-test worker');
+  shutdown('SIGTERM');
   process.exitCode = 1;
 });
 

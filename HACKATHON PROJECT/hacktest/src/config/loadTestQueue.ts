@@ -17,8 +17,10 @@ let queue: Queue<LoadTestJobData> | undefined;
 export const getLoadTestQueue = (): Queue<LoadTestJobData> => {
   if (!connection) {
     connection = new IORedis(env.REDIS_URL, {
-      maxRetriesPerRequest: null,
+      maxRetriesPerRequest: 1,
+      connectTimeout: 2_000,
       lazyConnect: true,
+      retryStrategy: (attempt) => attempt > 2 ? null : Math.min(attempt * 250, 1_000),
     });
     connection.on('error', (error: Error) => {
       log.error({ err: error }, 'Load-test queue Redis connection error');
@@ -43,7 +45,8 @@ export const disconnectLoadTestQueue = async (): Promise<void> => {
     queue = undefined;
   }
   if (connection && connection.status !== 'end') {
-    await connection.quit();
+    if (connection.status === 'ready') await connection.quit();
+    else connection.disconnect();
     connection = undefined;
   }
 };
