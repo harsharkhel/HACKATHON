@@ -1,6 +1,9 @@
 import { LoadTestStatus, type UserRole } from '@prisma/client';
 import type { LoadTest } from '@prisma/client';
-import { getLoadTestQueue, LOAD_TEST_CANCEL_KEY_PREFIX } from '../../config/loadTestQueue';
+import {
+  getLoadTestQueue,
+  LOAD_TEST_CANCEL_KEY_PREFIX,
+} from '../../config/loadTestQueue';
 import { deleteTemporaryState, setTemporaryState } from '../../config/redis';
 import { prisma } from '../../config/database';
 import { BadRequestError, ConflictError, NotFoundError } from '../../utils/errors';
