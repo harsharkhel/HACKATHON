@@ -16,6 +16,8 @@ import {
 } from '../validators/project.validators';
 import { qrSessionIdRequestSchema, createQrRequestSchema } from '../validators/session.validators';
 import { createLoadTestRequestSchema } from '../modules/load-tests/loadTest.schema';
+import { getProjectAnalyticsHandler } from '../controllers/projectAnalytics.controller';
+import { projectAnalyticsRequestSchema } from '../validators/analytics.validators';
 
 const router = Router();
 
@@ -27,6 +29,13 @@ router.post(
   projectController.create,
 );
 router.get('/', requireAuth, projectController.list);
+router.get(
+  '/:id/analytics',
+  requireAuth,
+  validate(projectAnalyticsRequestSchema),
+  requireProjectOwner,
+  getProjectAnalyticsHandler,
+);
 router.get(
   '/:id/devices',
   requireAuth,

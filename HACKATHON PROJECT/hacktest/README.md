@@ -38,6 +38,7 @@ All project endpoints require a valid bearer token. Creation, updates, and delet
 - `POST /api/v1/projects`
 - `GET /api/v1/projects`
 - `GET /api/v1/projects/:id`
+- `GET /api/v1/projects/:id/analytics?startDate=...&endDate=...`
 - `PATCH /api/v1/projects/:id`
 - `DELETE /api/v1/projects/:id`
 - `POST /api/v1/projects/:id/health-check`
@@ -91,7 +92,9 @@ Load-test SSE streams require the same bearer authorization as the load-test rec
 
 Device compatibility metadata is submitted to `/api/v1/sessions/:id/device-info` from an active device session. Viewport dimensions and coarse connection metrics are range-limited; supported device summaries omit IP addresses and raw user-agent strings.
 
-Run the API authorization and URL security tests with `npm test`.
+Project analytics are owner-only and use database counts, grouped aggregations, and aggregates rather than loading raw event rows. Date filters are optional RFC3339 timestamps and are inclusive. `qrScans` counts successful QR-to-device connections; `uniqueSessions` counts created project sessions; active sessions are sessions whose persisted expiry is in the future. Additive indexes support project-session and device-session date filtering. `averageResponseTimeMs` is based on health-check samples; `errorRate` combines failed health checks and failed load-test requests against all measured health checks and load-test requests.
+
+Run the backend tests with `npm test`; `npm run test:coverage` prints Node's built-in coverage report.
 
 Generate a JWT secret for local development with:
 

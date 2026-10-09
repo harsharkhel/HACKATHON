@@ -73,6 +73,7 @@ model ProjectSession {
   devices DeviceSession[]
 
   @@index([projectId, expiresAt])
+  @@index([projectId, createdAt])
 }
 
 model DeviceSession {
@@ -95,6 +96,7 @@ model DeviceSession {
   projectSession ProjectSession @relation(fields: [projectSessionId], references: [id], onDelete: Cascade)
 
   @@index([projectSessionId, lastSeenAt])
+  @@index([projectSessionId, connectedAt])
   @@index([deviceType, browser, operatingSystem])
 }
 
