@@ -48,6 +48,13 @@ All project endpoints require a valid bearer token. Creation, updates, and delet
 - `GET /api/v1/projects/:id/load-tests`
 - `GET /api/v1/load-tests/:id`
 - `POST /api/v1/load-tests/:id/cancel`
+- `GET /api/v1/load-tests/:id/stream` (authenticated Server-Sent Events)
+- `POST /api/v1/sessions/:id/device-info`
+- `GET /api/v1/projects/:id/devices` (project owner)
+- `GET /api/v1/judge/projects/:id`
+- `GET /api/v1/judge/projects/:id/health`
+- `GET /api/v1/judge/projects/:id/load-tests`
+- `GET /api/v1/judge/projects/:id/devices`
 
 Health checks re-resolve and pin public addresses at connect time, validate every redirect, limit the redirect chain to five hops, use a seven-second total deadline, perform at most one retry, and cap concurrent checks. Every result (including network failures) is persisted in PostgreSQL; history returns the latest 50 checks.
 
@@ -79,6 +86,10 @@ npm run worker
 For development, run `npm run worker:dev` in another terminal. BullMQ retries failed jobs once, recovers stalled jobs, and worker shutdown requests cancellation of its active test. Results include total/successful/failed requests, average/median/p95/p99 latency, RPS, error rate, status and error distributions, and duration.
 
 The Compose stack starts `api` and `load-test-worker` as separate services. The worker is constrained to one CPU and 512 MiB in the supplied Compose configuration.
+
+Load-test SSE streams require the same bearer authorization as the load-test record; the latest Redis snapshot is sent immediately on connection/reconnection, heartbeats are sent every 15 seconds, and terminal events close the stream. Judge project endpoints require a `JUDGE` bearer token and an active `X-Project-Session-Id` whose QR-created device session belongs to the requested project.
+
+Device compatibility metadata is submitted to `/api/v1/sessions/:id/device-info` from an active device session. Viewport dimensions and coarse connection metrics are range-limited; supported device summaries omit IP addresses and raw user-agent strings.
 
 Run the API authorization and URL security tests with `npm test`.
 

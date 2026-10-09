@@ -15,7 +15,7 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
     "db:generate": "prisma generate",
-    "test": "tsx --test src/services/urlSecurityService.test.ts src/services/healthCheck.service.test.ts src/services/deviceSession.service.test.ts src/services/qrSession.service.test.ts src/modules/load-tests/loadTest.metrics.test.ts src/modules/load-tests/loadTest.schema.test.ts src/utils/requestPath.test.ts src/routes/project.routes.test.ts src/routes/preview.routes.test.ts",
+    "test": "tsx --test src/services/urlSecurityService.test.ts src/services/healthCheck.service.test.ts src/services/deviceSession.service.test.ts src/services/qrSession.service.test.ts src/modules/load-tests/loadTest.metrics.test.ts src/modules/load-tests/loadTest.schema.test.ts src/utils/requestPath.test.ts src/validators/deviceInfo.validators.test.ts src/middleware/matchingProjectSession.middleware.test.ts src/routes/project.routes.test.ts src/routes/preview.routes.test.ts",
     "postinstall": "prisma generate && prisma skills sync || exit 0"
   },
   "keywords": [
