@@ -11,6 +11,7 @@ import qrRoutes from './routes/qr.routes';
 import sessionRoutes from './routes/session.routes';
 import previewRoutes from './routes/preview.routes';
 import loadTestRoutes from './routes/loadTest.routes';
+import judgeRoutes from './routes/judge.routes';
 
 const app = express();
 
@@ -33,6 +34,7 @@ app.use('/api/v1/qr', qrRoutes);
 app.use('/api/v1/sessions', sessionRoutes);
 app.use('/api/v1/preview', previewRoutes);
 app.use('/api/v1/load-tests', loadTestRoutes);
+app.use('/api/v1/judge', judgeRoutes);
 app.use(notFoundHandler);
 app.use(errorHandler);
 

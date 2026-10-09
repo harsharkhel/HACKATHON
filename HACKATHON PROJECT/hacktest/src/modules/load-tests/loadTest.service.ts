@@ -1,10 +1,13 @@
 import { LoadTestStatus, type UserRole } from '@prisma/client';
 import type { LoadTest } from '@prisma/client';
+import { z } from 'zod';
 import {
   getLoadTestQueue,
   LOAD_TEST_CANCEL_KEY_PREFIX,
+  loadTestProgressKey,
+  type LoadTestProgress,
 } from '../../config/loadTestQueue';
-import { deleteTemporaryState, setTemporaryState } from '../../config/redis';
+import { deleteTemporaryState, getTemporaryState, setTemporaryState } from '../../config/redis';
 import { prisma } from '../../config/database';
 import { BadRequestError, ConflictError, NotFoundError } from '../../utils/errors';
 import { createModuleLogger } from '../../utils/logger';
@@ -14,6 +17,17 @@ const log = createModuleLogger('load-tests');
 const MAX_QUEUED_JOBS = 100;
 const CANCELLATION_TTL_SECONDS = 120;
 const MAX_TESTS_PER_HOUR = 3;
+const PROGRESS_TTL_SECONDS = 2 * 60 * 60;
+const progressSchema = z.object({
+  status: z.enum(['queued', 'starting', 'running', 'completed', 'failed', 'cancelled']),
+  currentRequests: z.number().int().nonnegative(),
+  successfulRequests: z.number().int().nonnegative(),
+  failedRequests: z.number().int().nonnegative(),
+  currentRps: z.number().nonnegative(),
+  currentLatency: z.number().nonnegative().nullable(),
+  progress: z.number().min(0).max(100),
+  updatedAt: z.string().datetime(),
+});
 
 const isTerminalStatus = (status: LoadTestStatus): boolean =>
   status === LoadTestStatus.COMPLETED ||
@@ -136,6 +150,20 @@ export const createProjectLoadTest = async (
   });
 
   try {
+    await setTemporaryState(
+      loadTestProgressKey(record.id),
+      JSON.stringify({
+        status: 'queued',
+        currentRequests: 0,
+        successfulRequests: 0,
+        failedRequests: 0,
+        currentRps: 0,
+        currentLatency: null,
+        progress: 0,
+        updatedAt: new Date().toISOString(),
+      } satisfies LoadTestProgress),
+      PROGRESS_TTL_SECONDS,
+    );
     await queue.add('run-load-test', { loadTestId: record.id }, { jobId: record.id });
   } catch (error) {
     await prisma.loadTest.update({
@@ -146,6 +174,20 @@ export const createProjectLoadTest = async (
         errorMessage: 'Unable to enqueue the load test; confirm Redis is available and retry.',
       },
     });
+    await setTemporaryState(
+      loadTestProgressKey(record.id),
+      JSON.stringify({
+        status: 'failed',
+        currentRequests: 0,
+        successfulRequests: 0,
+        failedRequests: 0,
+        currentRps: 0,
+        currentLatency: null,
+        progress: 100,
+        updatedAt: new Date().toISOString(),
+      } satisfies LoadTestProgress),
+      PROGRESS_TTL_SECONDS,
+    );
     log.error({ err: error, loadTestId: record.id }, 'Failed to enqueue load test');
     throw error;
   }
@@ -171,6 +213,17 @@ export const listProjectLoadTests = async (projectId: string, userId: string, ro
   return records.map(loadTestResponse);
 };
 
+export const listLoadTestsForAuthorizedSession = async (projectId: string) => {
+  const project = await prisma.project.findUnique({ where: { id: projectId }, select: { id: true } });
+  if (!project) throw new NotFoundError('Project not found', 'PROJECT_NOT_FOUND');
+  const records = await prisma.loadTest.findMany({
+    where: { projectId },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    take: 10,
+  });
+  return records.map(loadTestResponse);
+};
+
 export const getLoadTest = async (loadTestId: string, userId: string, role: UserRole) => {
   const record = await prisma.loadTest.findUnique({
     where: { id: loadTestId },
@@ -179,6 +232,12 @@ export const getLoadTest = async (loadTestId: string, userId: string, role: User
   if (!record) throw new NotFoundError('Load test not found', 'LOAD_TEST_NOT_FOUND');
   await ensureLoadTestAccess(record, userId, role);
   return loadTestResponse(record);
+};
+
+export const getLoadTestProgress = async (loadTestId: string): Promise<LoadTestProgress | null> => {
+  const state = await getTemporaryState(loadTestProgressKey(loadTestId));
+  if (!state) return null;
+  return progressSchema.parse(JSON.parse(state)) satisfies LoadTestProgress;
 };
 
 export const cancelLoadTest = async (loadTestId: string, userId: string, role: UserRole) => {
@@ -212,6 +271,20 @@ export const cancelLoadTest = async (loadTestId: string, userId: string, role: U
         }
       }
       await deleteTemporaryState(`${LOAD_TEST_CANCEL_KEY_PREFIX}${record.id}`);
+      await setTemporaryState(
+        loadTestProgressKey(record.id),
+        JSON.stringify({
+          status: 'cancelled',
+          currentRequests: 0,
+          successfulRequests: 0,
+          failedRequests: 0,
+          currentRps: 0,
+          currentLatency: null,
+          progress: 100,
+          updatedAt: new Date().toISOString(),
+        } satisfies LoadTestProgress),
+        PROGRESS_TTL_SECONDS,
+      );
       log.info({ loadTestId }, 'Queued load test cancelled');
       return getLoadTest(loadTestId, userId, role);
     }

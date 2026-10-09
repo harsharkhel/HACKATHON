@@ -5,10 +5,26 @@ import { createModuleLogger } from '../utils/logger';
 
 export const LOAD_TEST_QUEUE_NAME = 'hackpreview-load-tests';
 export const LOAD_TEST_CANCEL_KEY_PREFIX = 'hackpreview:load-test-cancel:';
+export const LOAD_TEST_PROGRESS_KEY_PREFIX = 'hackpreview:load-test-progress:';
+export const LOAD_TEST_LOCK_KEY_PREFIX = 'hackpreview:load-test-lock:';
 
 export interface LoadTestJobData {
   loadTestId: string;
 }
+
+export interface LoadTestProgress {
+  status: 'queued' | 'starting' | 'running' | 'completed' | 'failed' | 'cancelled';
+  currentRequests: number;
+  successfulRequests: number;
+  failedRequests: number;
+  currentRps: number;
+  currentLatency: number | null;
+  progress: number;
+  updatedAt: string;
+}
+
+export const loadTestProgressKey = (loadTestId: string): string =>
+  `${LOAD_TEST_PROGRESS_KEY_PREFIX}${loadTestId}`;
 
 const log = createModuleLogger('load-test-queue');
 let connection: IORedis | undefined;

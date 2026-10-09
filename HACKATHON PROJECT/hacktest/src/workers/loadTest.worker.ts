@@ -7,9 +7,11 @@ import { disconnectRedis } from '../config/redis';
 import {
   disconnectLoadTestQueue,
   LOAD_TEST_CANCEL_KEY_PREFIX,
+  LOAD_TEST_PROGRESS_KEY_PREFIX,
   LOAD_TEST_QUEUE_NAME,
   type LoadTestJobData,
 } from '../config/loadTestQueue';
+import { setTemporaryState } from '../config/redis';
 import { disconnectDatabase } from '../services/database.service';
 import { createModuleLogger } from '../utils/logger';
 import { runLoadTest } from '../modules/load-tests/loadTest.worker.service';
@@ -54,21 +56,46 @@ worker.on('failed', async (job, error) => {
   try {
     const record = await prisma.loadTest.findUnique({
       where: { id: job.data.loadTestId },
-      select: { cancelRequestedAt: true },
+      select: {
+        cancelRequestedAt: true,
+        totalRequests: true,
+        successfulRequests: true,
+        failedRequests: true,
+        requestsPerSecond: true,
+        averageResponseTime: true,
+        status: true,
+      },
     });
+    const finalStatus = record?.cancelRequestedAt ? LoadTestStatus.CANCELLED : LoadTestStatus.FAILED;
     await prisma.loadTest.updateMany({
       where: {
         id: job.data.loadTestId,
         status: { in: [LoadTestStatus.QUEUED, LoadTestStatus.RUNNING] },
       },
       data: {
-        status: record?.cancelRequestedAt ? LoadTestStatus.CANCELLED : LoadTestStatus.FAILED,
+        status: finalStatus,
         completedAt: new Date(),
         errorMessage: record?.cancelRequestedAt
           ? null
           : 'The load-test worker failed after retrying. Please retry the test.',
       },
     });
+    if (record && ![LoadTestStatus.COMPLETED, LoadTestStatus.CANCELLED].includes(record.status)) {
+      await setTemporaryState(
+        `${LOAD_TEST_PROGRESS_KEY_PREFIX}${job.data.loadTestId}`,
+        JSON.stringify({
+          status: finalStatus.toLowerCase(),
+          currentRequests: record.totalRequests,
+          successfulRequests: record.successfulRequests,
+          failedRequests: record.failedRequests,
+          currentRps: record.requestsPerSecond ?? 0,
+          currentLatency: record.averageResponseTime,
+          progress: 100,
+          updatedAt: new Date().toISOString(),
+        }),
+        2 * 60 * 60,
+      );
+    }
   } catch (failureError) {
     log.error({ err: failureError, loadTestId: job.data.loadTestId }, 'Unable to persist terminal job failure');
   }

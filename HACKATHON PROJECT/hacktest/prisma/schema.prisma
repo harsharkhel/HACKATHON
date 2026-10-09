@@ -83,12 +83,19 @@ model DeviceSession {
   operatingSystem  String?
   ipAddress        String?  @db.Inet
   userAgent        String?
+  viewportWidth    Int?
+  viewportHeight   Int?
+  connectionType   String?
+  effectiveType    String?
+  downlinkMbps     Float?
+  roundTripTimeMs  Int?
   connectedAt      DateTime @default(now()) @db.Timestamptz(3)
   lastSeenAt       DateTime @default(now()) @db.Timestamptz(3)
 
   projectSession ProjectSession @relation(fields: [projectSessionId], references: [id], onDelete: Cascade)
 
   @@index([projectSessionId, lastSeenAt])
+  @@index([deviceType, browser, operatingSystem])
 }
 
 model HealthCheck {

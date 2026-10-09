@@ -47,6 +47,15 @@ export const parseDeviceMetadata = (userAgent: string | null) => {
   return { deviceType, browser, operatingSystem, userAgent: ua || null };
 };
 
+export interface DeviceCompatibilityInput {
+  viewportWidth?: number;
+  viewportHeight?: number;
+  connectionType?: 'wifi' | 'cellular' | 'ethernet' | 'bluetooth' | 'other';
+  effectiveType?: 'slow-2g' | '2g' | '3g' | '4g';
+  downlinkMbps?: number;
+  roundTripTimeMs?: number;
+}
+
 const activeSessionKey = (sessionId: string): string => `${ACTIVE_SESSION_PREFIX}${sessionId}`;
 const normalizeIpAddress = (ipAddress: string | null): string | null =>
   ipAddress?.startsWith('::ffff:') ? ipAddress.slice(7) : ipAddress;
@@ -182,4 +191,111 @@ export const requireActiveDeviceSession = async (sessionId: string): Promise<{ i
   }
   const session = await getActiveDeviceSession(sessionId);
   return { id: session.id, projectId: session.projectSession.projectId };
+};
+
+const supportedBrowser = (browser: string | null): boolean =>
+  browser !== null && ['Chrome', 'Edge', 'Firefox', 'Safari'].includes(browser);
+
+export const updateDeviceCompatibility = async (
+  sessionId: string,
+  userAgent: string | null,
+  input: DeviceCompatibilityInput,
+) => {
+  const session = await getActiveDeviceSession(sessionId);
+  const metadata = parseDeviceMetadata(userAgent ?? session.userAgent);
+  const updated = await prisma.deviceSession.update({
+    where: { id: sessionId },
+    data: {
+      deviceType: metadata.deviceType,
+      browser: metadata.browser,
+      operatingSystem: metadata.operatingSystem,
+      userAgent: metadata.userAgent,
+      viewportWidth: input.viewportWidth,
+      viewportHeight: input.viewportHeight,
+      connectionType: input.connectionType,
+      effectiveType: input.effectiveType,
+      downlinkMbps: input.downlinkMbps,
+      roundTripTimeMs: input.roundTripTimeMs,
+      lastSeenAt: new Date(),
+    },
+  });
+
+  return {
+    deviceType: updated.deviceType,
+    browser: updated.browser,
+    os: updated.operatingSystem,
+    viewport: updated.viewportWidth && updated.viewportHeight
+      ? { width: updated.viewportWidth, height: updated.viewportHeight }
+      : null,
+    connection: updated.connectionType || updated.effectiveType || updated.downlinkMbps !== null || updated.roundTripTimeMs !== null
+      ? {
+          type: updated.connectionType,
+          effectiveType: updated.effectiveType,
+          downlinkMbps: updated.downlinkMbps,
+          roundTripTimeMs: updated.roundTripTimeMs,
+        }
+      : null,
+    supported: supportedBrowser(updated.browser),
+  };
+};
+
+export const listProjectDeviceCompatibility = async (projectId: string, userId: string) => {
+  const project = await prisma.project.findFirst({
+    where: { id: projectId, userId },
+    select: { id: true },
+  });
+  if (!project) throw new NotFoundError('Project not found', 'PROJECT_NOT_FOUND');
+
+  return listDeviceCompatibility(projectId);
+};
+
+export const listDeviceCompatibilityForAuthorizedSession = async (projectId: string) => {
+  const project = await prisma.project.findUnique({ where: { id: projectId }, select: { id: true } });
+  if (!project) throw new NotFoundError('Project not found', 'PROJECT_NOT_FOUND');
+  return listDeviceCompatibility(projectId);
+};
+
+const listDeviceCompatibility = async (projectId: string) => {
+  const devices = await prisma.deviceSession.findMany({
+    where: {
+      projectSession: { projectId },
+    },
+    select: {
+      id: true,
+      deviceType: true,
+      browser: true,
+      operatingSystem: true,
+      viewportWidth: true,
+      viewportHeight: true,
+      connectionType: true,
+      effectiveType: true,
+      downlinkMbps: true,
+      roundTripTimeMs: true,
+      connectedAt: true,
+      lastSeenAt: true,
+    },
+    orderBy: { lastSeenAt: 'desc' },
+    take: 100,
+  });
+
+  return devices.map((device) => ({
+    id: device.id,
+    deviceType: device.deviceType,
+    browser: device.browser,
+    os: device.operatingSystem,
+    viewport: device.viewportWidth && device.viewportHeight
+      ? { width: device.viewportWidth, height: device.viewportHeight }
+      : null,
+    connection: device.connectionType || device.effectiveType || device.downlinkMbps !== null || device.roundTripTimeMs !== null
+      ? {
+          type: device.connectionType,
+          effectiveType: device.effectiveType,
+          downlinkMbps: device.downlinkMbps,
+          roundTripTimeMs: device.roundTripTimeMs,
+        }
+      : null,
+    supported: supportedBrowser(device.browser),
+    connectedAt: device.connectedAt,
+    lastSeenAt: device.lastSeenAt,
+  }));
 };

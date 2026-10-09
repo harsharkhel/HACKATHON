@@ -2,10 +2,21 @@ import http from 'node:http';
 import https from 'node:https';
 import { Resolver } from 'node:dns/promises';
 import { isIP } from 'node:net';
+import crypto from 'node:crypto';
 import { LoadTestStatus, Prisma } from '@prisma/client';
 import { prisma } from '../../config/database';
-import { LOAD_TEST_CANCEL_KEY_PREFIX } from '../../config/loadTestQueue';
-import { getTemporaryState } from '../../config/redis';
+import {
+  LOAD_TEST_CANCEL_KEY_PREFIX,
+  LOAD_TEST_LOCK_KEY_PREFIX,
+  LOAD_TEST_PROGRESS_KEY_PREFIX,
+  type LoadTestProgress,
+} from '../../config/loadTestQueue';
+import {
+  deleteTemporaryStateIfValue,
+  getTemporaryState,
+  setTemporaryState,
+  setTemporaryStateIfAbsent,
+} from '../../config/redis';
 import { isPrivateAddress, validateTargetUrl } from '../../services/urlSecurityService';
 import { createModuleLogger } from '../../utils/logger';
 import { calculateLoadTestMetrics, type LoadTestObservation } from './loadTest.metrics';
@@ -13,6 +24,8 @@ import { calculateLoadTestMetrics, type LoadTestObservation } from './loadTest.m
 const log = createModuleLogger('load-test-worker');
 const REQUEST_TIMEOUT_MS = 5_000;
 const DNS_TIMEOUT_MS = 2_000;
+const PROGRESS_TTL_SECONDS = 2 * 60 * 60;
+const LOCK_TTL_SECONDS = 90;
 
 const isTerminalStatus = (status: LoadTestStatus): boolean =>
   status === LoadTestStatus.COMPLETED ||
@@ -148,6 +161,17 @@ const readCancelRequested = async (loadTestId: string): Promise<boolean> => {
     (await getTemporaryState(`${LOAD_TEST_CANCEL_KEY_PREFIX}${loadTestId}`)) === '1';
 };
 
+const storeProgress = async (
+  loadTestId: string,
+  progress: Omit<LoadTestProgress, 'updatedAt'>,
+): Promise<void> => {
+  await setTemporaryState(
+    `${LOAD_TEST_PROGRESS_KEY_PREFIX}${loadTestId}`,
+    JSON.stringify({ ...progress, updatedAt: new Date().toISOString() }),
+    PROGRESS_TTL_SECONDS,
+  );
+};
+
 const persistFailure = async (loadTestId: string, message: string): Promise<void> => {
   await prisma.loadTest.updateMany({
     where: { id: loadTestId, status: { in: [LoadTestStatus.QUEUED, LoadTestStatus.RUNNING] } },
@@ -159,7 +183,7 @@ const persistFailure = async (loadTestId: string, message: string): Promise<void
   });
 };
 
-export const runLoadTest = async (loadTestId: string): Promise<void> => {
+const runLoadTestWithLock = async (loadTestId: string): Promise<void> => {
   const loadTest = await prisma.loadTest.findUnique({ where: { id: loadTestId } });
   if (!loadTest) throw new Error('load_test_not_found');
   if (isTerminalStatus(loadTest.status)) {
@@ -171,6 +195,15 @@ export const runLoadTest = async (loadTestId: string): Promise<void> => {
     await prisma.loadTest.updateMany({
       where: { id: loadTestId, status: { in: [LoadTestStatus.QUEUED, LoadTestStatus.RUNNING] } },
       data: { status: LoadTestStatus.CANCELLED, completedAt: new Date() },
+    });
+    await storeProgress(loadTestId, {
+      status: 'cancelled',
+      currentRequests: 0,
+      successfulRequests: 0,
+      failedRequests: 0,
+      currentRps: 0,
+      currentLatency: null,
+      progress: 100,
     });
     return;
   }
@@ -194,6 +227,15 @@ export const runLoadTest = async (loadTestId: string): Promise<void> => {
         where: { id: loadTestId, status: { in: [LoadTestStatus.QUEUED, LoadTestStatus.RUNNING] } },
         data: { status: LoadTestStatus.CANCELLED, completedAt: new Date() },
       });
+      await storeProgress(loadTestId, {
+        status: 'cancelled',
+        currentRequests: 0,
+        successfulRequests: 0,
+        failedRequests: 0,
+        currentRps: 0,
+        currentLatency: null,
+        progress: 100,
+      });
       return;
     }
     if (current && isTerminalStatus(current.status)) return;
@@ -205,6 +247,15 @@ export const runLoadTest = async (loadTestId: string): Promise<void> => {
     durationSeconds: loadTest.durationSeconds,
     maxRequests: loadTest.maxRequests,
   }, 'Load test started');
+  await storeProgress(loadTestId, {
+    status: 'starting',
+    currentRequests: 0,
+    successfulRequests: 0,
+    failedRequests: 0,
+    currentRps: 0,
+    currentLatency: null,
+    progress: 0,
+  });
 
   let pinnedTarget: Awaited<ReturnType<typeof resolvePinnedTarget>>;
   try {
@@ -212,6 +263,15 @@ export const runLoadTest = async (loadTestId: string): Promise<void> => {
   } catch (error) {
     const reason = error instanceof Error ? error.message : 'target_validation_failed';
     await persistFailure(loadTestId, reason === 'unsafe_target' ? 'Target URL resolved to a non-public address.' : 'Target URL could not be safely resolved.');
+    await storeProgress(loadTestId, {
+      status: 'failed',
+      currentRequests: 0,
+      successfulRequests: 0,
+      failedRequests: 0,
+      currentRps: 0,
+      currentLatency: null,
+      progress: 100,
+    });
     log.warn({ loadTestId, reason }, 'Load-test target validation failed');
     return;
   }
@@ -221,17 +281,41 @@ export const runLoadTest = async (loadTestId: string): Promise<void> => {
   let nextRequest = 0;
   let stoppingReason: 'cancelled' | 'duration' | null = null;
   let cancellationFailure: Error | undefined;
+  let progressWrite = Promise.resolve();
+  let lastProgressAt = 0;
+  const startedMonotonic = performance.now();
 
   const stopActiveRequests = (): void => {
     for (const request of activeRequests) {
       request.destroy(new Error('cancelled'));
     }
   };
+  const publishProgress = (force = false): void => {
+    const now = performance.now();
+    if (!force && now - lastProgressAt < 500) return;
+    lastProgressAt = now;
+    const currentRequests = observations.length;
+    const successfulRequests = observations.filter(
+      (item) => item.statusCode !== null && item.statusCode >= 200 && item.statusCode < 400,
+    ).length;
+    const elapsedMs = Math.max(1, now - startedMonotonic);
+    const snapshot: Omit<LoadTestProgress, 'updatedAt'> = {
+      status: stoppingReason === 'cancelled' ? 'cancelled' : 'running',
+      currentRequests,
+      successfulRequests,
+      failedRequests: currentRequests - successfulRequests,
+      currentRps: currentRequests / (elapsedMs / 1_000),
+      currentLatency: observations.at(-1)?.latencyMs ?? null,
+      progress: Math.min(99, Math.floor((elapsedMs / (loadTest.durationSeconds * 1_000)) * 100)),
+    };
+    progressWrite = progressWrite.then(() => storeProgress(loadTestId, snapshot));
+  };
   const checkCancellation = setInterval(() => {
     void readCancelRequested(loadTestId).then((requested) => {
       if (requested && stoppingReason === null) {
         stoppingReason = 'cancelled';
         stopActiveRequests();
+        publishProgress(true);
       }
     }).catch((error: unknown) => {
       cancellationFailure = error instanceof Error ? error : new Error('Cancellation check failed');
@@ -243,9 +327,19 @@ export const runLoadTest = async (loadTestId: string): Promise<void> => {
     if (stoppingReason === null) {
       stoppingReason = 'duration';
       stopActiveRequests();
+      publishProgress(true);
     }
   }, loadTest.durationSeconds * 1_000);
-  const startedMonotonic = performance.now();
+  await storeProgress(loadTestId, {
+    status: 'running',
+    currentRequests: 0,
+    successfulRequests: 0,
+    failedRequests: 0,
+    currentRps: 0,
+    currentLatency: null,
+    progress: 0,
+  });
+  const progressInterval = setInterval(() => publishProgress(), 500);
 
   const simulateUser = async (): Promise<void> => {
     while (nextRequest < loadTest.maxRequests && stoppingReason === null) {
@@ -253,6 +347,7 @@ export const runLoadTest = async (loadTestId: string): Promise<void> => {
       nextRequest += 1;
       if (requestNumber >= loadTest.maxRequests) return;
       observations.push(await requestTarget(pinnedTarget.url, pinnedTarget.addresses, activeRequests));
+      publishProgress();
     }
   };
 
@@ -262,7 +357,9 @@ export const runLoadTest = async (loadTestId: string): Promise<void> => {
   } finally {
     clearInterval(checkCancellation);
     clearTimeout(stopAtDuration);
+    clearInterval(progressInterval);
   }
+  await progressWrite;
 
   const durationMs = performance.now() - startedMonotonic;
   const metrics = calculateLoadTestMetrics(observations, durationMs);
@@ -280,6 +377,15 @@ export const runLoadTest = async (loadTestId: string): Promise<void> => {
       completedAt: new Date(),
     },
   });
+  await storeProgress(loadTestId, {
+    status: finalStatus.toLowerCase() as LoadTestProgress['status'],
+    currentRequests: metrics.totalRequests,
+    successfulRequests: metrics.successfulRequests,
+    failedRequests: metrics.failedRequests,
+    currentRps: metrics.requestsPerSecond,
+    currentLatency: observations.at(-1)?.latencyMs ?? null,
+    progress: 100,
+  });
   log.info({
     loadTestId,
     status: finalStatus,
@@ -289,4 +395,20 @@ export const runLoadTest = async (loadTestId: string): Promise<void> => {
     durationMs: metrics.durationMs,
     requestsPerSecond: metrics.requestsPerSecond,
   }, 'Load test finished');
+};
+
+export const runLoadTest = async (loadTestId: string): Promise<void> => {
+  const lockKey = `${LOAD_TEST_LOCK_KEY_PREFIX}${loadTestId}`;
+  const lockValue = `${process.pid}:${crypto.randomUUID()}`;
+  const acquired = await setTemporaryStateIfAbsent(lockKey, lockValue, LOCK_TTL_SECONDS);
+  if (!acquired) {
+    log.warn({ loadTestId }, 'Duplicate load-test execution skipped because the worker lock is held');
+    throw new Error('load_test_already_claimed');
+  }
+
+  try {
+    await runLoadTestWithLock(loadTestId);
+  } finally {
+    await deleteTemporaryStateIfValue(lockKey, lockValue);
+  }
 };

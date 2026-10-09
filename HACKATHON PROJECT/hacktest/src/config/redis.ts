@@ -46,6 +46,14 @@ export const deleteTemporaryState = async (key: string): Promise<void> => {
   await redis.del(key);
 };
 
+export const deleteTemporaryStateIfValue = async (key: string, value: string): Promise<void> => {
+  const redis = await getClient();
+  await redis.eval(
+    "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
+    { keys: [key], arguments: [value] },
+  );
+};
+
 export const disconnectRedis = async (): Promise<void> => {
   if (connection) await connection;
   if (client.isOpen) await client.quit();

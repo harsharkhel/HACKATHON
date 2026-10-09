@@ -28,6 +28,13 @@ router.post(
 );
 router.get('/', requireAuth, projectController.list);
 router.get(
+  '/:id/devices',
+  requireAuth,
+  validate(projectIdRequestSchema),
+  requireProjectOwner,
+  projectController.listDevices,
+);
+router.get(
   '/:id',
   requireAuth,
   validate(projectIdRequestSchema),

@@ -5,6 +5,8 @@ import {
   getDeviceSession,
   heartbeatDeviceSession,
 } from '../services/deviceSession.service';
+import { updateDeviceCompatibility } from '../services/deviceSession.service';
+import type { DeviceCompatibilityInput } from '../services/deviceSession.service';
 
 export const connectSession = async (req: Request, res: Response): Promise<void> => {
   const result = await connectDeviceSession(req.body.token, {
@@ -30,4 +32,14 @@ export const heartbeatSession = async (req: Request, res: Response): Promise<voi
 export const deleteSession = async (req: Request, res: Response): Promise<void> => {
   await endDeviceSession(String(req.params.id));
   res.status(204).end();
+};
+
+export const updateSessionDeviceInfo = async (req: Request, res: Response): Promise<void> => {
+  const result = await updateDeviceCompatibility(
+    String(req.params.id),
+    req.get('user-agent') ?? null,
+    req.body as DeviceCompatibilityInput,
+  );
+  res.setHeader('Cache-Control', 'no-store');
+  res.status(200).json({ success: true, data: result });
 };
