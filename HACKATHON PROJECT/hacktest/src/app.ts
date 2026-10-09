@@ -7,6 +7,8 @@ import { errorHandler, notFoundHandler } from './middleware/error.middleware';
 import { requestLogger } from './middleware/requestLogger.middleware';
 import healthRoutes from './routes/health.routes';
 import projectRoutes from './routes/project.routes';
+import qrRoutes from './routes/qr.routes';
+import sessionRoutes from './routes/session.routes';
 
 const app = express();
 
@@ -23,6 +25,8 @@ app.use(express.urlencoded({ extended: false, limit: '100kb' }));
 
 app.use('/api/v1/health', healthRoutes);
 app.use('/api/v1/projects', projectRoutes);
+app.use('/api/v1/qr', qrRoutes);
+app.use('/api/v1/sessions', sessionRoutes);
 app.use(notFoundHandler);
 app.use(errorHandler);
 

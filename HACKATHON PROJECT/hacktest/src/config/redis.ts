@@ -1,21 +1,38 @@
-/**
- * Redis Configuration (Stub for Phase 1)
- * 
- * WHY A STUB: Redis is needed for Phase 8 (BullMQ job queues).
- * We define the config file now so the project structure is established,
- * but the actual Redis connection will be implemented in Phase 8.
- * 
- * This file will eventually export:
- * - A Redis connection (ioredis)
- * - BullMQ queue instances
- */
-
+import { createClient } from 'redis';
 import { env } from './env';
+import { createModuleLogger } from '../utils/logger';
 
-// Redis configuration — connection will be created in Phase 8
-export const redisConfig = {
+const log = createModuleLogger('redis');
+const client = createClient({
   url: env.REDIS_URL,
+  socket: { connectTimeout: 1_000, reconnectStrategy: false },
+});
+let connection: Promise<void> | undefined;
+
+client.on('error', (error: Error) => {
+  log.error({ err: error }, 'Redis connection error');
+});
+
+const getClient = async () => {
+  if (client.isOpen) return client;
+  connection ??= client.connect().finally(() => {
+    connection = undefined;
+  });
+  await connection;
+  return client;
 };
 
-// Placeholder export so other files can import this without errors
-export default redisConfig;
+export const setTemporaryState = async (key: string, value: string, ttlSeconds: number): Promise<void> => {
+  const redis = await getClient();
+  await redis.set(key, value, { EX: ttlSeconds });
+};
+
+export const getTemporaryState = async (key: string): Promise<string | null> => {
+  const redis = await getClient();
+  return redis.get(key);
+};
+
+export const deleteTemporaryState = async (key: string): Promise<void> => {
+  const redis = await getClient();
+  await redis.del(key);
+};

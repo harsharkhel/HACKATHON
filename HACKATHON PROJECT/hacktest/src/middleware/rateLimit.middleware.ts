@@ -58,3 +58,25 @@ export const authLimiter = rateLimit({
     },
   },
 });
+
+export const healthCheckLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    error: { code: 'TOO_MANY_REQUESTS', message: 'Health-check limit reached; try again later' },
+  },
+});
+
+export const qrSessionLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    error: { code: 'TOO_MANY_REQUESTS', message: 'Too many QR session requests; try again later' },
+  },
+});

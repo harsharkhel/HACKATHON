@@ -4,11 +4,15 @@ import { requireAuth } from '../middleware/auth.middleware';
 import { requireProjectOwner } from '../middleware/projectAuthorization.middleware';
 import { requireRole } from '../middleware/role.middleware';
 import { validate } from '../middleware/validation.middleware';
+import { healthCheckLimiter, qrSessionLimiter } from '../middleware/rateLimit.middleware';
+import { createProjectHealthCheck, getProjectHealthChecks } from '../controllers/healthCheck.controller';
+import { createQr, revokeQr } from '../controllers/qrSession.controller';
 import {
   createProjectRequestSchema,
   projectIdRequestSchema,
   updateProjectRequestSchema,
 } from '../validators/project.validators';
+import { qrSessionIdRequestSchema, createQrRequestSchema } from '../validators/session.validators';
 
 const router = Router();
 
@@ -43,6 +47,38 @@ router.delete(
   validate(projectIdRequestSchema),
   requireProjectOwner,
   projectController.remove,
+);
+router.post(
+  '/:id/health-check',
+  requireAuth,
+  healthCheckLimiter,
+  validate(projectIdRequestSchema),
+  requireProjectOwner,
+  createProjectHealthCheck,
+);
+router.get(
+  '/:id/health-checks',
+  requireAuth,
+  validate(projectIdRequestSchema),
+  requireProjectOwner,
+  getProjectHealthChecks,
+);
+router.post(
+  '/:id/qr',
+  requireAuth,
+  qrSessionLimiter,
+  validate(projectIdRequestSchema),
+  validate(createQrRequestSchema),
+  requireProjectOwner,
+  createQr,
+);
+router.delete(
+  '/:id/qr/:qrSessionId',
+  requireAuth,
+  qrSessionLimiter,
+  validate(qrSessionIdRequestSchema),
+  requireProjectOwner,
+  revokeQr,
 );
 
 export default router;

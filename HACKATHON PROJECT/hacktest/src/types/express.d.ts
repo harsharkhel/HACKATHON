@@ -5,6 +5,10 @@ declare global {
         userId: string;
         role: 'PARTICIPANT' | 'JUDGE' | 'ORGANIZER';
       };
+      activeProjectSession?: {
+        id: string;
+        projectId: string;
+      };
     }
   }
 }
