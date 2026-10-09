@@ -1,6 +1,6 @@
-import { LoadTestStatus, Prisma, type UserRole } from '@prisma/client';
+import { LoadTestStatus, type UserRole } from '@prisma/client';
 import type { LoadTest } from '@prisma/client';
-import { getLoadTestQueue } from '../../config/loadTestQueue';
+import { getLoadTestQueue, LOAD_TEST_CANCEL_KEY_PREFIX } from '../../config/loadTestQueue';
 import { deleteTemporaryState, setTemporaryState } from '../../config/redis';
 import { prisma } from '../../config/database';
 import { BadRequestError, ConflictError, NotFoundError } from '../../utils/errors';
@@ -190,5 +190,3 @@ export const cancelLoadTest = async (loadTestId: string, userId: string, role: U
   log.info({ loadTestId }, 'Load-test cancellation requested');
   return getLoadTest(loadTestId, userId, role);
 };
-
-export const loadTestJson = (value: Record<string, number>): Prisma.InputJsonObject => value;
