@@ -202,7 +202,7 @@ const runAttempt = async (initialUrl: string, deadline: number): Promise<Omit<He
         continue;
       }
 
-      const healthy = response.statusCode >= 200 && response.statusCode < 400;
+      const healthy = isHealthyStatus(response.statusCode);
       return {
         healthy,
         statusCode,
@@ -227,7 +227,7 @@ const runAttempt = async (initialUrl: string, deadline: number): Promise<Omit<He
 };
 
 const retryable = (result: Omit<HealthResult, 'responseTime' | 'checkedAt'>): boolean =>
-  result.statusCode !== null && result.statusCode >= 500 ||
+  (result.statusCode !== null && result.statusCode >= 500) ||
   ['dns_timeout', 'dns_failure', 'request_timeout', 'connection_error', 'tls_failure'].includes(result.errorReason ?? '');
 
 export const isHealthyStatus = (statusCode: number): boolean => statusCode >= 200 && statusCode < 400;

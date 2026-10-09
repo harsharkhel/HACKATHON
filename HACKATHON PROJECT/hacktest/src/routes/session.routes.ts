@@ -11,6 +11,11 @@ import { connectSessionRequestSchema, sessionIdRequestSchema } from '../validato
 
 const router = Router();
 
+router.use((_req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store');
+  next();
+});
+
 router.post('/connect', qrSessionLimiter, validate(connectSessionRequestSchema), connectSession);
 router.get('/:id', qrSessionLimiter, validate(sessionIdRequestSchema), getSession);
 router.post('/:id/heartbeat', qrSessionLimiter, validate(sessionIdRequestSchema), heartbeatSession);
