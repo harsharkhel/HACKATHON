@@ -10,6 +10,8 @@ ALTER TABLE "HealthCheck"
 ALTER TABLE "QRSession"
   RENAME COLUMN "qrToken" TO "qrTokenHash";
 
+DELETE FROM "QRSession";
+
 DROP INDEX "QRSession_qrToken_key";
 CREATE UNIQUE INDEX "QRSession_qrTokenHash_key" ON "QRSession"("qrTokenHash");
 

@@ -15,11 +15,13 @@ const userId = (req: Request): string => {
 export const createQr = async (req: Request, res: Response): Promise<void> => {
   const format = req.query.format === 'svg' ? 'svg' : 'png';
   const result = await createProjectQrSession(String(req.params.id), userId(req), format);
+  res.setHeader('Cache-Control', 'no-store');
   res.status(201).json({ success: true, data: result });
 };
 
 export const getQrPreview = async (req: Request, res: Response): Promise<void> => {
   const result = await getQrProjectPreview(String(req.params.token));
+  res.setHeader('Cache-Control', 'no-store');
   res.status(200).json({ success: true, data: result });
 };
 
@@ -28,6 +30,7 @@ export const connectFromQr = async (req: Request, res: Response): Promise<void> 
     ipAddress: req.ip ?? null,
     userAgent: req.get('user-agent') ?? null,
   });
+  res.setHeader('Cache-Control', 'no-store');
   res.status(201).json({ success: true, data: result });
 };
 

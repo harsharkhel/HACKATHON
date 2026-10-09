@@ -25,6 +25,7 @@ import { Request, Response, NextFunction } from 'express';
 import { AppError, ValidationError } from '../utils/errors';
 import { createModuleLogger } from '../utils/logger';
 import { ZodError } from 'zod';
+import { sanitizeRequestPath } from '../utils/requestPath';
 
 const log = createModuleLogger('error-handler');
 
@@ -39,7 +40,7 @@ export const errorHandler = (
   // ─── Case 1: Our custom AppError (expected, operational) ───
   if (err instanceof ValidationError) {
     // Validation errors include field-level details
-    log.warn({ code: err.code, details: err.details, path: req.path }, err.message);
+    log.warn({ code: err.code, details: err.details, path: sanitizeRequestPath(req.path) }, err.message);
     res.status(err.statusCode).json({
       success: false,
       error: {
@@ -54,9 +55,9 @@ export const errorHandler = (
   if (err instanceof AppError) {
     // Log at warn level for client errors (4xx), error for server errors (5xx)
     if (err.statusCode >= 500) {
-      log.error({ code: err.code, stack: err.stack, path: req.path }, err.message);
+      log.error({ code: err.code, stack: err.stack, path: sanitizeRequestPath(req.path) }, err.message);
     } else {
-      log.warn({ code: err.code, path: req.path }, err.message);
+      log.warn({ code: err.code, path: sanitizeRequestPath(req.path) }, err.message);
     }
 
     res.status(err.statusCode).json({
@@ -78,7 +79,7 @@ export const errorHandler = (
       details[path].push(issue.message);
     });
 
-    log.warn({ details, path: req.path }, 'Validation failed');
+    log.warn({ details, path: sanitizeRequestPath(req.path) }, 'Validation failed');
     res.status(422).json({
       success: false,
       error: {
@@ -96,7 +97,7 @@ export const errorHandler = (
     { 
       err: err.message, 
       stack: err.stack, 
-      path: req.path,
+      path: sanitizeRequestPath(req.path),
       method: req.method,
     }, 
     'Unhandled error'

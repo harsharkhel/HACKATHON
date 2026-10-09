@@ -11,16 +11,19 @@ export const connectSession = async (req: Request, res: Response): Promise<void>
     ipAddress: req.ip ?? null,
     userAgent: req.get('user-agent') ?? null,
   });
+  res.setHeader('Cache-Control', 'no-store');
   res.status(201).json({ success: true, data: result });
 };
 
 export const getSession = async (req: Request, res: Response): Promise<void> => {
   const result = await getDeviceSession(String(req.params.id));
+  res.setHeader('Cache-Control', 'no-store');
   res.status(200).json({ success: true, data: result });
 };
 
 export const heartbeatSession = async (req: Request, res: Response): Promise<void> => {
   const result = await heartbeatDeviceSession(String(req.params.id));
+  res.setHeader('Cache-Control', 'no-store');
   res.status(200).json({ success: true, data: result });
 };
 
