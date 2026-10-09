@@ -46,11 +46,15 @@ export const validate = (schema: z.ZodTypeAny) => {
     try {
       // Parse all three sources of input at once
       // Zod will strip any extra fields that aren't in the schema (security!)
-      await schema.parseAsync({
+      const parsed = await schema.parseAsync({
         body: req.body,
         query: req.query,
         params: req.params,
       });
+
+      if (typeof parsed === 'object' && parsed !== null) {
+        if ('body' in parsed) req.body = parsed.body;
+      }
 
       // Validation passed — continue to the next middleware/handler
       next();

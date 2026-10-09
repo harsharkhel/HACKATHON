@@ -1,40 +1,57 @@
 import type { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
+import { isIP } from 'node:net';
+import { UserRole } from '@prisma/client';
 import { prisma } from '../config/database';
 import { env } from '../config/env';
 import { UnauthorizedError } from '../utils/errors';
-import type { AuthenticatedUser } from '../modules/auth/auth.types';
 
-export const requireAuth = async (req: Request, _res: Response, next: NextFunction) => {
+export const requireAuth = async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
+  const authHeader = req.headers.authorization;
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+
+  if (!token) {
+    next(new UnauthorizedError('Authentication token is required', 'MISSING_TOKEN'));
+    return;
+  }
+
+  let userId: string | undefined;
   try {
-    const authHeader = req.headers.authorization;
-    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
-
-    if (!token) {
-      throw new UnauthorizedError('Authentication token is required', 'MISSING_TOKEN');
+    const payload = jwt.verify(token, env.JWT_SECRET, { algorithms: ['HS256'] });
+    if (typeof payload === 'object' && payload !== null) {
+      const id = typeof payload.userId === 'string' ? payload.userId : payload.sub;
+      if (typeof id === 'string' && isIP(id) === 0) {
+        userId = id;
+      }
     }
-
-    const payload = jwt.verify(token, env.JWT_SECRET) as { userId?: string; role?: string };
-
-    if (!payload.userId || !payload.role) {
-      throw new UnauthorizedError('Invalid authentication token', 'INVALID_TOKEN');
+  } catch (error) {
+    if (error instanceof jwt.JsonWebTokenError || error instanceof jwt.TokenExpiredError) {
+      next(new UnauthorizedError('Invalid or expired token', 'INVALID_TOKEN'));
+      return;
     }
+    next(error);
+    return;
+  }
 
+  if (!userId) {
+    next(new UnauthorizedError('Invalid authentication token', 'INVALID_TOKEN'));
+    return;
+  }
+
+  try {
     const user = await prisma.user.findUnique({
-      where: { id: payload.userId },
+      where: { id: userId },
+      select: { id: true, role: true },
     });
 
     if (!user) {
-      throw new UnauthorizedError('User associated with this token no longer exists', 'INVALID_TOKEN');
+      next(new UnauthorizedError('Invalid authentication token', 'INVALID_TOKEN'));
+      return;
     }
 
-    req.user = {
-      userId: user.id,
-      role: user.role as AuthenticatedUser['role'],
-    };
-
+    req.user = { userId: user.id, role: user.role as UserRole };
     next();
   } catch (error) {
-    next(error instanceof Error ? new UnauthorizedError('Invalid or expired token', 'INVALID_TOKEN') : error);
+    next(error);
   }
 };

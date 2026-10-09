@@ -1,88 +1,40 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, UserRole } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-async function main() {
-  const organizer = await prisma.user.upsert({
-    where: { email: 'organizer@hacktest.dev' },
+async function main(): Promise<void> {
+  const user = await prisma.user.upsert({
+    where: { email: 'demo@hackpreview.local' },
     update: {},
     create: {
-      name: 'HackTest Organizer',
-      email: 'organizer@hacktest.dev',
-      passwordHash: 'demo-password-hash',
-      role: 'ORGANIZER',
+      name: 'HackPreview Demo User',
+      email: 'demo@hackpreview.local',
+      passwordHash: 'seed-only-no-password',
+      role: UserRole.PARTICIPANT,
     },
   });
 
-  const judge = await prisma.user.upsert({
-    where: { email: 'judge@hacktest.dev' },
+  await prisma.project.upsert({
+    where: { id: '00000000-0000-4000-8000-000000000001' },
     update: {},
     create: {
-      name: 'Demo Judge',
-      email: 'judge@hacktest.dev',
-      passwordHash: 'demo-password-hash',
-      role: 'JUDGE',
+      id: '00000000-0000-4000-8000-000000000001',
+      userId: user.id,
+      name: 'HackPreview Example Project',
+      description: 'A sample project created by the local development seed.',
+      projectUrl: 'https://example.com',
+      repositoryUrl: 'https://github.com/example/hackpreview-demo',
+      status: 'SUBMITTED',
     },
   });
 
-  const participant = await prisma.user.upsert({
-    where: { email: 'participant@hacktest.dev' },
-    update: {},
-    create: {
-      name: 'Demo Participant',
-      email: 'participant@hacktest.dev',
-      passwordHash: 'demo-password-hash',
-      role: 'PARTICIPANT',
-    },
-  });
-
-  const hackathon = await prisma.hackathon.upsert({
-    where: { id: 'demo-hackathon' },
-    update: {},
-    create: {
-      id: 'demo-hackathon',
-      name: 'HackTest Demo Hackathon',
-      description: 'A sample hackathon used for local development and testing.',
-      status: 'ACTIVE',
-      organizerId: organizer.id,
-    },
-  });
-
-  await prisma.hackathonParticipant.upsert({
-    where: {
-      userId_hackathonId: {
-        userId: participant.id,
-        hackathonId: hackathon.id,
-      },
-    },
-    update: {},
-    create: {
-      userId: participant.id,
-      hackathonId: hackathon.id,
-    },
-  });
-
-  await prisma.hackathonJudge.upsert({
-    where: {
-      userId_hackathonId: {
-        userId: judge.id,
-        hackathonId: hackathon.id,
-      },
-    },
-    update: {},
-    create: {
-      userId: judge.id,
-      hackathonId: hackathon.id,
-    },
-  });
-
-  console.log('Seeded HackTest demo data');
+  console.info('Seeded the HackPreview demo user and project.');
 }
 
 main()
-  .catch((error) => {
-    console.error(error);
-    process.exit(1);
+  .catch((error: unknown) => {
+    console.error('Database seed failed:', error);
+    process.exitCode = 1;
   })
   .finally(async () => {
     await prisma.$disconnect();

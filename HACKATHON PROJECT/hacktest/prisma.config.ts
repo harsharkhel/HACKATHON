@@ -5,4 +5,7 @@ dotenv.config({ path: ".env" });
 
 export default defineConfig({
   schema: "prisma/schema.prisma",
+  migrations: {
+    seed: "tsx prisma/seed.ts",
+  },
 });

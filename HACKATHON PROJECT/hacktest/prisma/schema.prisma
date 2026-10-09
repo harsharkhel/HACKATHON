@@ -7,35 +7,21 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum Role {
+enum UserRole {
   PARTICIPANT
   JUDGE
   ORGANIZER
 }
 
-enum HackathonStatus {
-  DRAFT
+enum ProjectStatus {
+  CREATED
   ACTIVE
-  JUDGING
+  PAUSED
   COMPLETED
   ARCHIVED
 }
 
-enum ProjectStatus {
-  DRAFT
-  SUBMITTED
-  UNDER_REVIEW
-  TESTED
-  EVALUATED
-}
-
-enum TestType {
-  COMPATIBILITY
-  PERFORMANCE
-  LOAD
-}
-
-enum TestStatus {
+enum LoadTestStatus {
   QUEUED
   RUNNING
   COMPLETED
@@ -43,242 +29,113 @@ enum TestStatus {
   CANCELLED
 }
 
-enum LoadTestStatus {
-  PASSED
-  DEGRADED
-  FAILED
-}
-
-enum NotificationType {
-  TEST_COMPLETED
-  EVALUATION_RECEIVED
-  PROJECT_SUBMITTED
-  HACKATHON_UPDATE
-}
-
 model User {
-  id                    String               @id @default(uuid())
-  name                  String
-  email                 String               @unique
-  passwordHash          String
-  role                  Role                 @default(PARTICIPANT)
-  createdAt             DateTime             @default(now())
-  updatedAt             DateTime             @updatedAt
+  id           String   @id @default(uuid()) @db.Uuid
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         UserRole @default(PARTICIPANT)
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
 
-  organizedHackathons   Hackathon[]          @relation("HackathonOrganizer")
-  hackathonParticipants HackathonParticipant[]
-  hackathonJudges       HackathonJudge[]
-  submittedProjects     Project[]            @relation("ProjectParticipant")
-  evaluations           Evaluation[]
-  notifications         Notification[]
-  auditLogs             AuditLog[]
-}
-
-model Hackathon {
-  id                   String               @id @default(uuid())
-  name                 String
-  description          String?
-  startDate            DateTime?
-  endDate              DateTime?
-  submissionDeadline   DateTime?
-  status               HackathonStatus      @default(DRAFT)
-  organizerId          String
-  createdAt            DateTime             @default(now())
-  updatedAt            DateTime             @updatedAt
-
-  organizer            User                 @relation("HackathonOrganizer", fields: [organizerId], references: [id], onDelete: Cascade)
-  participants         HackathonParticipant[]
-  judges               HackathonJudge[]
-  projects             Project[]
-
-  @@index([organizerId])
-}
-
-model HackathonParticipant {
-  id          String   @id @default(uuid())
-  userId      String
-  hackathonId String
-  joinedAt    DateTime @default(now())
-
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  hackathon   Hackathon @relation(fields: [hackathonId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, hackathonId])
-  @@index([hackathonId])
-}
-
-model HackathonJudge {
-  id          String   @id @default(uuid())
-  userId      String
-  hackathonId String
-  assignedAt  DateTime @default(now())
-
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  hackathon   Hackathon @relation(fields: [hackathonId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, hackathonId])
-  @@index([hackathonId])
+  projects Project[]
 }
 
 model Project {
-  id              String          @id @default(uuid())
-  hackathonId     String
-  participantId   String
-  name            String
-  description     String
-  githubUrl       String?
-  deploymentUrl   String?
-  status          ProjectStatus   @default(DRAFT)
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  id            String        @id @default(uuid()) @db.Uuid
+  userId        String        @db.Uuid
+  name          String
+  description   String
+  projectUrl    String
+  repositoryUrl String?
+  status        ProjectStatus @default(CREATED)
+  createdAt     DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime      @updatedAt @db.Timestamptz(3)
 
-  hackathon       Hackathon       @relation(fields: [hackathonId], references: [id], onDelete: Cascade)
-  participant     User            @relation("ProjectParticipant", fields: [participantId], references: [id], onDelete: Cascade)
-  testingSessions TestingSession[]
-  testJobs        TestJob[]
-  evaluations     Evaluation[]
-
-  @@unique([hackathonId, participantId])
-  @@index([hackathonId])
-  @@index([participantId])
-}
-
-model TestingSession {
-  id          String    @id @default(uuid())
-  projectId   String
-  tokenHash   String    @unique
-  expiresAt   DateTime
-  usedAt      DateTime?
-  createdAt   DateTime  @default(now())
-
-  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  testJobs    TestJob[]
-
-  @@index([projectId])
-  @@index([tokenHash])
-}
-
-model TestJob {
-  id          String    @id @default(uuid())
-  projectId   String
-  sessionId   String?
-  type        TestType
-  status      TestStatus @default(QUEUED)
-  startedAt   DateTime?
-  completedAt DateTime?
-  errorMessage String?
-  createdAt   DateTime  @default(now())
-
-  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  session     TestingSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
-
-  compatibilityResult CompatibilityResult?
-  performanceResult   PerformanceResult?
-  loadTestResult      LoadTestResult?
-
-  @@index([projectId])
-  @@index([status])
-}
-
-model CompatibilityResult {
-  id                  String    @id @default(uuid())
-  testJobId           String    @unique
-  httpStatus          Int?
-  pageLoadTime        Float?
-  consoleErrors       Int?
-  failedRequests      Int?
-  brokenLinks         Int?
-  horizontalOverflow  Boolean?
-  responsive          Boolean?
-  viewportResults     Json?
-  screenshots         Json?
-  issues              Json?
-  createdAt           DateTime  @default(now())
-
-  testJob             TestJob   @relation(fields: [testJobId], references: [id], onDelete: Cascade)
-}
-
-model PerformanceResult {
-  id                 String    @id @default(uuid())
-  testJobId          String    @unique
-  avgResponseTime    Float?
-  p95Latency         Float?
-  p99Latency         Float?
-  requestsPerSecond  Float?
-  errorRate          Float?
-  throughput         Float?
-  availability       Float?
-  createdAt          DateTime  @default(now())
-
-  testJob            TestJob   @relation(fields: [testJobId], references: [id], onDelete: Cascade)
-}
-
-model LoadTestResult {
-  id                 String    @id @default(uuid())
-  testJobId          String    @unique
-  virtualUsers       Int?
-  duration           Int?
-  requestsPerSecond  Float?
-  avgLatency         Float?
-  p95Latency         Float?
-  p99Latency         Float?
-  errorRate          Float?
-  httpFailures       Int?
-  status             LoadTestStatus?
-  createdAt          DateTime  @default(now())
-
-  testJob            TestJob   @relation(fields: [testJobId], references: [id], onDelete: Cascade)
-}
-
-model Evaluation {
-  id                  String   @id @default(uuid())
-  projectId           String
-  judgeId             String
-  innovationScore     Int?
-  technicalScore      Int?
-  uiuxScore           Int?
-  functionalityScore  Int?
-  performanceScore    Int?
-  scalabilityScore    Int?
-  problemSolvingScore Int?
-  presentationScore   Int?
-  comments            String?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
-
-  project             Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  judge               User     @relation(fields: [judgeId], references: [id], onDelete: Cascade)
-
-  @@unique([projectId, judgeId])
-  @@index([projectId])
-}
-
-model Notification {
-  id        String          @id @default(uuid())
-  userId    String
-  type      NotificationType
-  title     String
-  message   String
-  read      Boolean         @default(false)
-  createdAt DateTime        @default(now())
-
-  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId, read])
-}
-
-model AuditLog {
-  id          String   @id @default(uuid())
-  userId      String?
-  action      String
-  entityType  String
-  entityId    String?
-  metadata    Json?
-  ipAddress   String?
-  createdAt   DateTime @default(now())
-
-  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessions     ProjectSession[]
+  healthChecks HealthCheck[]
+  loadTests    LoadTest[]
+  qrSessions   QRSession[]
 
   @@index([userId])
-  @@index([entityType, entityId])
+  @@index([status, createdAt])
+}
+
+model ProjectSession {
+  id           String   @id @default(uuid()) @db.Uuid
+  projectId    String   @db.Uuid
+  sessionToken String   @unique
+  expiresAt    DateTime @db.Timestamptz(3)
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+
+  project Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  devices DeviceSession[]
+
+  @@index([projectId, expiresAt])
+}
+
+model DeviceSession {
+  id               String   @id @default(uuid()) @db.Uuid
+  projectSessionId String   @db.Uuid
+  deviceType       String
+  browser          String?
+  operatingSystem  String?
+  ipAddress        String?  @db.Inet
+  userAgent        String?
+  connectedAt      DateTime @default(now()) @db.Timestamptz(3)
+  lastSeenAt       DateTime @default(now()) @db.Timestamptz(3)
+
+  projectSession ProjectSession @relation(fields: [projectSessionId], references: [id], onDelete: Cascade)
+
+  @@index([projectSessionId, lastSeenAt])
+}
+
+model HealthCheck {
+  id           String   @id @default(uuid()) @db.Uuid
+  projectId    String   @db.Uuid
+  url          String
+  statusCode   Int?
+  responseTime Float?
+  isHealthy    Boolean
+  errorMessage String?
+  checkedAt    DateTime @default(now()) @db.Timestamptz(3)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, checkedAt])
+}
+
+model LoadTest {
+  id                  String         @id @default(uuid()) @db.Uuid
+  projectId           String         @db.Uuid
+  targetUrl           String
+  totalRequests       Int            @default(0)
+  concurrentUsers     Int
+  successfulRequests  Int            @default(0)
+  failedRequests      Int            @default(0)
+  averageResponseTime Float?
+  p95ResponseTime     Float?
+  p99ResponseTime     Float?
+  requestsPerSecond   Float?
+  startedAt           DateTime       @default(now()) @db.Timestamptz(3)
+  completedAt         DateTime?      @db.Timestamptz(3)
+  status              LoadTestStatus @default(QUEUED)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, startedAt])
+  @@index([status, startedAt])
+}
+
+model QRSession {
+  id        String   @id @default(uuid()) @db.Uuid
+  projectId String   @db.Uuid
+  qrToken   String   @unique
+  expiresAt DateTime @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, expiresAt])
 }

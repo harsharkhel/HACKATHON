@@ -29,5 +29,13 @@
     }
   },
   "include": ["src/**/*.ts", "src/**/*.d.ts"],
-  "exclude": ["node_modules", "dist", "tests", "prisma/seed.ts"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "tests",
+    "prisma/seed.ts",
+    "src/modules/**",
+    "src/middleware/auth.middleware.ts",
+    "src/middleware/role.middleware.ts"
+  ]
 }

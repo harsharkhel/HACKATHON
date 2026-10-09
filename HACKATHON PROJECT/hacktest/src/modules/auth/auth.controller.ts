@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from 'express';
-import { loginUser, getCurrentUserById, registerUser } from './auth.service';
+import { getCurrentUserById, loginUser, refreshTokenUser, registerUser } from './auth.service';
 
 export const register = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -41,6 +41,29 @@ export const me = async (req: Request, res: Response, next: NextFunction) => {
     res.status(200).json({
       success: true,
       data: user,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const refreshToken = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = await refreshTokenUser(req.body.refreshToken);
+
+    res.cookie('refreshToken', result.refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        accessToken: result.accessToken,
+        user: result.user,
+      },
     });
   } catch (error) {
     next(error);

@@ -26,6 +26,10 @@ const signToken = (payload: AuthenticatedUser, secret: string, expiresIn: string
   return jwt.sign(payload, secret, { expiresIn: expiresIn as jwt.SignOptions['expiresIn'] });
 };
 
+const verifyToken = (token: string, secret: string) => {
+  return jwt.verify(token, secret) as { userId?: string; role?: string };
+};
+
 export const getCurrentUserById = async (userId: string) => {
   const user = await prisma.user.findUnique({
     where: { id: userId },
@@ -100,6 +104,46 @@ export const loginUser = async (input: {
   return {
     accessToken: signToken(authUser, env.JWT_SECRET, env.JWT_ACCESS_EXPIRATION),
     refreshToken: signToken(authUser, env.JWT_REFRESH_SECRET, env.JWT_REFRESH_EXPIRATION),
+    user: sanitizeUser(user),
+  };
+};
+
+export const refreshTokenUser = async (refreshToken: string): Promise<{ accessToken: string; refreshToken: string; user: PublicUser }> => {
+  if (!refreshToken || refreshToken.trim().length === 0) {
+    throw new UnauthorizedError('Refresh token is required', 'MISSING_REFRESH_TOKEN');
+  }
+
+  let payload: { userId?: string; role?: string };
+
+  try {
+    payload = verifyToken(refreshToken, env.JWT_REFRESH_SECRET);
+  } catch {
+    throw new UnauthorizedError('Refresh token is invalid or expired', 'INVALID_REFRESH_TOKEN');
+  }
+
+  if (!payload.userId || !payload.role) {
+    throw new UnauthorizedError('Refresh token payload is invalid', 'INVALID_REFRESH_TOKEN');
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: payload.userId },
+  });
+
+  if (!user) {
+    throw new UnauthorizedError('User associated with this refresh token no longer exists', 'INVALID_REFRESH_TOKEN');
+  }
+
+  const authUser: AuthenticatedUser = {
+    userId: user.id,
+    role: user.role as UserRole,
+  };
+
+  const accessToken = signToken(authUser, env.JWT_SECRET, env.JWT_ACCESS_EXPIRATION);
+  const nextRefreshToken = signToken(authUser, env.JWT_REFRESH_SECRET, env.JWT_REFRESH_EXPIRATION);
+
+  return {
+    accessToken,
+    refreshToken: nextRefreshToken,
     user: sanitizeUser(user),
   };
 };

@@ -106,9 +106,7 @@ export const errorHandler = (
     success: false,
     error: {
       code: 'INTERNAL_ERROR',
-      message: process.env.NODE_ENV === 'development' 
-        ? err.message 
-        : 'An unexpected error occurred',
+      message: 'An unexpected error occurred',
     },
   });
 };
