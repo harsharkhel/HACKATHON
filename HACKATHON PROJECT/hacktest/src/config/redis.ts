@@ -7,7 +7,7 @@ const client = createClient({
   url: env.REDIS_URL,
   socket: { connectTimeout: 1_000, reconnectStrategy: false },
 });
-let connection: Promise<void> | undefined;
+let connection: Promise<unknown> | undefined;
 
 client.on('error', (error: Error) => {
   log.error({ err: error }, 'Redis connection error');
@@ -35,4 +35,9 @@ export const getTemporaryState = async (key: string): Promise<string | null> => 
 export const deleteTemporaryState = async (key: string): Promise<void> => {
   const redis = await getClient();
   await redis.del(key);
+};
+
+export const disconnectRedis = async (): Promise<void> => {
+  if (connection) await connection;
+  if (client.isOpen) await client.quit();
 };

@@ -103,11 +103,16 @@ const requestHeadersOnly = (
       range: 'bytes=0-0',
     },
     lookup: (_hostname, options, callback) => {
-      const address = addresses.find((item) => !options.family || item.family === options.family);
-      if (!address) {
+      const matchingAddresses = addresses.filter((item) => !options.family || item.family === options.family);
+      if (matchingAddresses.length === 0) {
         callback(Object.assign(new Error('No validated address for target'), { code: 'ENOTFOUND' }), '', 0);
         return;
       }
+      if (options.all) {
+        callback(null, matchingAddresses);
+        return;
+      }
+      const address = matchingAddresses[0];
       callback(null, address.address, address.family);
     },
   });
