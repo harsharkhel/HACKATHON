@@ -97,7 +97,8 @@ const shutdown = (signal: NodeJS.Signals): void => {
       }
     }));
     await worker.close();
-    if (connection.status !== 'end') await connection.quit();
+    if (connection.status === 'ready') await connection.quit();
+    else connection.disconnect();
     await Promise.all([
       disconnectDatabase(),
       disconnectRedis(),

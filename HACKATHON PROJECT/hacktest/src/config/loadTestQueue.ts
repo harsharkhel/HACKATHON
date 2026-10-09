@@ -15,6 +15,11 @@ let connection: IORedis | undefined;
 let queue: Queue<LoadTestJobData> | undefined;
 
 export const getLoadTestQueue = (): Queue<LoadTestJobData> => {
+  if (connection?.status === 'end') {
+    connection = undefined;
+    queue = undefined;
+  }
+
   if (!connection) {
     connection = new IORedis(env.REDIS_URL, {
       maxRetriesPerRequest: 1,
@@ -27,15 +32,20 @@ export const getLoadTestQueue = (): Queue<LoadTestJobData> => {
     });
   }
 
-  queue ??= new Queue<LoadTestJobData>(LOAD_TEST_QUEUE_NAME, {
-    connection,
-    defaultJobOptions: {
-      attempts: 2,
-      backoff: { type: 'exponential', delay: 1_000 },
-      removeOnComplete: { age: 86_400, count: 1_000 },
-      removeOnFail: { age: 7 * 86_400, count: 5_000 },
-    },
-  });
+  if (!queue) {
+    queue = new Queue<LoadTestJobData>(LOAD_TEST_QUEUE_NAME, {
+      connection,
+      defaultJobOptions: {
+        attempts: 2,
+        backoff: { type: 'exponential', delay: 1_000 },
+        removeOnComplete: { age: 86_400, count: 1_000 },
+        removeOnFail: { age: 7 * 86_400, count: 5_000 },
+      },
+    });
+    queue.on('error', (error: Error) => {
+      log.error({ err: error }, 'Load-test queue error');
+    });
+  }
   return queue;
 };
 

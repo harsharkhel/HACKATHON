@@ -13,6 +13,7 @@ import type { CreateLoadTestInput } from './loadTest.schema';
 const log = createModuleLogger('load-tests');
 const MAX_QUEUED_JOBS = 100;
 const CANCELLATION_TTL_SECONDS = 120;
+const MAX_TESTS_PER_HOUR = 3;
 
 const isTerminalStatus = (status: LoadTestStatus): boolean =>
   status === LoadTestStatus.COMPLETED ||
@@ -83,42 +84,56 @@ export const createProjectLoadTest = async (
   input: CreateLoadTestInput,
 ) => {
   const project = await ensureProjectAccess(projectId, userId, role);
-  const activeCount = await prisma.loadTest.count({
-    where: { projectId, status: { in: [LoadTestStatus.QUEUED, LoadTestStatus.RUNNING] } },
-  });
-  if (activeCount > 0) {
-    throw new ConflictError('A load test is already queued or running for this project', 'LOAD_TEST_ALREADY_ACTIVE');
-  }
-
   const queue = getLoadTestQueue();
   const [waiting, delayed] = await Promise.all([queue.getWaitingCount(), queue.getDelayedCount()]);
   if (waiting + delayed >= MAX_QUEUED_JOBS) {
     throw new ConflictError('The load-test queue is full; try again later', 'LOAD_TEST_QUEUE_FULL');
   }
 
-  let record: LoadTest;
-  try {
-    record = await prisma.loadTest.create({
-      data: {
-        projectId: project.id,
-        targetUrl: project.projectUrl,
-        concurrentUsers: input.concurrency,
-        durationSeconds: input.durationSeconds,
-        maxRequests: input.maxRequests,
-        status: LoadTestStatus.QUEUED,
+  const record = await prisma.$transaction(async (transaction) => {
+    await transaction.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`hackpreview:load-test-account:${userId}`}))`;
+
+    const since = new Date(Date.now() - 60 * 60 * 1_000);
+    const recentTestCount = await transaction.loadTest.count({
+      where: { project: { userId }, createdAt: { gte: since } },
+    });
+    if (recentTestCount >= MAX_TESTS_PER_HOUR) {
+      throw new ConflictError('Only three load tests may be created per account each hour', 'LOAD_TEST_ACCOUNT_LIMIT');
+    }
+
+    const activeCount = await transaction.loadTest.count({
+      where: {
+        status: { in: [LoadTestStatus.QUEUED, LoadTestStatus.RUNNING] },
+        ...(role === 'PARTICIPANT' ? { project: { userId } } : { projectId }),
       },
     });
-  } catch (error) {
-    if (
-      typeof error === 'object' &&
-      error !== null &&
-      'code' in error &&
-      error.code === 'P2002'
-    ) {
+    if (activeCount > 0) {
       throw new ConflictError('A load test is already queued or running for this project', 'LOAD_TEST_ALREADY_ACTIVE');
     }
-    throw error;
-  }
+
+    try {
+      return await transaction.loadTest.create({
+        data: {
+          projectId: project.id,
+          targetUrl: project.projectUrl,
+          concurrentUsers: input.concurrency,
+          durationSeconds: input.durationSeconds,
+          maxRequests: input.maxRequests,
+          status: LoadTestStatus.QUEUED,
+        },
+      });
+    } catch (error) {
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictError('A load test is already queued or running for this project', 'LOAD_TEST_ALREADY_ACTIVE');
+      }
+      throw error;
+    }
+  });
 
   try {
     await queue.add('run-load-test', { loadTestId: record.id }, { jobId: record.id });
