@@ -50,7 +50,7 @@ const ensureProjectAccess = async (
     select: { id: true, userId: true, projectUrl: true },
   });
   if (!project) throw new NotFoundError('Project not found', 'PROJECT_NOT_FOUND');
-  if (role === 'PARTICIPANT' && project.userId !== userId) {
+  if (role !== 'PARTICIPANT' || project.userId !== userId) {
     throw new NotFoundError('Project not found', 'PROJECT_NOT_FOUND');
   }
   return project;
@@ -61,7 +61,7 @@ const ensureLoadTestAccess = async (
   userId: string,
   role: UserRole,
 ): Promise<void> => {
-  if (role === 'PARTICIPANT' && loadTest.project.userId !== userId) {
+  if (role !== 'PARTICIPANT' || loadTest.project.userId !== userId) {
     throw new NotFoundError('Load test not found', 'LOAD_TEST_NOT_FOUND');
   }
 };
