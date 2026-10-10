@@ -22,7 +22,7 @@ describe('createQrToken', () => {
 describe('getProjectPreviewByToken', () => {
   it('returns only public project fields, latest health, and QR expiry', async () => {
     const { token } = createQrToken();
-    const expiresAt = new Date('2026-10-09T20:00:00.000Z');
+    const expiresAt = new Date(Date.now() + 60_000);
     const previous = Object.getOwnPropertyDescriptor(prisma.qRSession, 'findUnique');
     const previousHealth = Object.getOwnPropertyDescriptor(prisma.healthCheck, 'findFirst');
 

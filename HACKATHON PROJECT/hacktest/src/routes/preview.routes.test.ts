@@ -9,7 +9,7 @@ import { hashSHA256 } from '../utils/crypto';
 
 describe('project preview API', () => {
   const token = 'a'.repeat(64);
-  const expiresAt = new Date('2026-10-09T20:00:00.000Z');
+  const expiresAt = new Date(Date.now() + 60_000);
   let server: Server;
   let baseUrl: string;
   let qrSession: object | null;
